@@ -13,3 +13,4 @@ These instructions apply to all files in this repository.
 Backends:
 - `SCENIC_BACKEND=wayland` (default) renders through a Wayland window.
 - `SCENIC_BACKEND=kms` or `SCENIC_BACKEND=drm` renders directly on Linux DRM/KMS hardware (tested with AMD GPUs).
+  - Override the DRM device path with `SCENIC_DRM_CARD` (defaults to `/dev/dri/card0`).

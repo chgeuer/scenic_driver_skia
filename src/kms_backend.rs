@@ -21,11 +21,14 @@ impl BasicDevice for Card {}
 impl ControlDevice for Card {}
 
 fn open_card() -> Result<Card, String> {
+    let card_path =
+        std::env::var("SCENIC_DRM_CARD").unwrap_or_else(|_| String::from("/dev/dri/card0"));
+
     let fd = OpenOptions::new()
         .read(true)
         .write(true)
-        .open("/dev/dri/card0")
-        .map_err(|e| format!("failed to open /dev/dri/card0: {e}"))?;
+        .open(&card_path)
+        .map_err(|e| format!("failed to open {card_path}: {e}"))?;
 
     Ok(Card(fd))
 }
