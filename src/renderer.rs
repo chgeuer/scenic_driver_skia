@@ -24,12 +24,20 @@ fn create_skia_surface(
     .expect("Could not create Skia surface")
 }
 
+#[derive(Clone, Copy)]
+pub enum SurfaceSource {
+    Gl {
+        fb_info: FramebufferInfo,
+        num_samples: usize,
+        stencil_size: usize,
+    },
+    Raster,
+}
+
 pub struct Renderer {
     surface: Surface,
-    gr_context: skia_safe::gpu::DirectContext,
-    fb_info: FramebufferInfo,
-    num_samples: usize,
-    stencil_size: usize,
+    gr_context: Option<skia_safe::gpu::DirectContext>,
+    source: SurfaceSource,
 }
 
 impl Renderer {
@@ -51,10 +59,23 @@ impl Renderer {
 
         Self {
             surface,
+            gr_context: Some(gr_context),
+            source: SurfaceSource::Gl {
+                fb_info,
+                num_samples,
+                stencil_size,
+            },
+        }
+    }
+
+    pub fn from_surface(
+        surface: Surface,
+        gr_context: Option<skia_safe::gpu::DirectContext>,
+    ) -> Self {
+        Self {
+            surface,
             gr_context,
-            fb_info,
-            num_samples,
-            stencil_size,
+            source: SurfaceSource::Raster,
         }
     }
 
@@ -80,16 +101,27 @@ impl Renderer {
         let font = Font::new(tf, 48.0);
         canvas.draw_str("Hello, Wayland", (40, 120), &font, &paint);
 
-        self.gr_context.flush_and_submit();
+        if let Some(gr) = self.gr_context.as_mut() {
+            gr.flush_and_submit();
+        }
     }
 
     pub fn resize(&mut self, dimensions: (u32, u32)) {
-        self.surface = create_skia_surface(
-            (dimensions.0 as i32, dimensions.1 as i32),
-            self.fb_info,
-            &mut self.gr_context,
-            self.num_samples,
-            self.stencil_size,
-        );
+        if let SurfaceSource::Gl {
+            fb_info,
+            num_samples,
+            stencil_size,
+        } = self.source
+        {
+            if let Some(context) = self.gr_context.as_mut() {
+                self.surface = create_skia_surface(
+                    (dimensions.0 as i32, dimensions.1 as i32),
+                    fb_info,
+                    context,
+                    num_samples,
+                    stencil_size,
+                );
+            }
+        }
     }
 }
