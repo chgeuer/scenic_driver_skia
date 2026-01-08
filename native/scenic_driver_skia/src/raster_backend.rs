@@ -1,0 +1,69 @@
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
+use std::time::Duration;
+
+use skia_safe::{ColorType, EncodedImageFormat, ImageInfo, surfaces};
+
+use crate::renderer::{RenderState, Renderer};
+
+fn write_png(surface: &mut skia_safe::Surface, path: &str) {
+    let image = surface.image_snapshot();
+    match image.encode_to_data(EncodedImageFormat::PNG) {
+        Some(data) => {
+            if let Err(err) = std::fs::write(path, data.as_bytes()) {
+                eprintln!("Failed to write raster output to {path}: {err}");
+            }
+        }
+        None => {
+            eprintln!("Failed to encode raster output to PNG");
+        }
+    }
+}
+
+pub fn run(
+    stop: Arc<AtomicBool>,
+    dirty: Arc<AtomicBool>,
+    render_state: Arc<Mutex<RenderState>>,
+    output_path: Arc<Mutex<Option<String>>>,
+) {
+    let width = 800;
+    let height = 600;
+
+    let image_info = ImageInfo::new(
+        (width, height),
+        ColorType::BGRA8888,
+        skia_safe::AlphaType::Premul,
+        None,
+    );
+
+    let surface =
+        surfaces::raster(&image_info, None, None).expect("Failed to create raster surface");
+
+    let initial_state = {
+        let state = render_state.lock().unwrap_or_else(|e| e.into_inner());
+        *state
+    };
+    let mut renderer = Renderer::from_surface(surface, None, String::new(), initial_state);
+    renderer.redraw();
+
+    if let Some(path) = output_path.lock().ok().and_then(|p| p.clone()) {
+        write_png(renderer.surface_mut(), &path);
+    }
+
+    loop {
+        if stop.load(Ordering::Relaxed) {
+            break;
+        }
+        if dirty.swap(false, Ordering::Relaxed) {
+            let state = render_state.lock().unwrap_or_else(|e| e.into_inner());
+            renderer.set_state(*state);
+            renderer.redraw();
+            if let Some(path) = output_path.lock().ok().and_then(|p| p.clone()) {
+                write_png(renderer.surface_mut(), &path);
+            }
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}

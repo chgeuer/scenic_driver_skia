@@ -3,6 +3,25 @@ use skia_safe::{
     gpu::{self, SurfaceOrigin, backend_render_targets, gl::FramebufferInfo},
 };
 
+#[derive(Clone, Copy, Debug)]
+pub struct RenderState {
+    pub clear_color: Color,
+    pub fill_color: Color,
+    pub rect: Option<Rect>,
+    pub translate: (f32, f32),
+}
+
+impl Default for RenderState {
+    fn default() -> Self {
+        Self {
+            clear_color: Color::WHITE,
+            fill_color: Color::RED,
+            rect: None,
+            translate: (0.0, 0.0),
+        }
+    }
+}
+
 fn create_skia_surface(
     dimensions: (i32, i32),
     fb_info: FramebufferInfo,
@@ -39,6 +58,7 @@ pub struct Renderer {
     gr_context: Option<skia_safe::gpu::DirectContext>,
     source: SurfaceSource,
     text: String,
+    render_state: RenderState,
 }
 
 impl Renderer {
@@ -49,6 +69,7 @@ impl Renderer {
         num_samples: usize,
         stencil_size: usize,
         text: String,
+        render_state: RenderState,
     ) -> Self {
         let mut gr_context = gr_context;
         let surface = create_skia_surface(
@@ -68,6 +89,7 @@ impl Renderer {
                 stencil_size,
             },
             text,
+            render_state,
         }
     }
 
@@ -75,12 +97,14 @@ impl Renderer {
         surface: Surface,
         gr_context: Option<skia_safe::gpu::DirectContext>,
         text: String,
+        render_state: RenderState,
     ) -> Self {
         Self {
             surface,
             gr_context,
             source: SurfaceSource::Raster,
             text,
+            render_state,
         }
     }
 
@@ -88,27 +112,39 @@ impl Renderer {
         self.text = text;
     }
 
+    pub fn set_state(&mut self, render_state: RenderState) {
+        self.render_state = render_state;
+    }
+
+    pub fn surface_mut(&mut self) -> &mut Surface {
+        &mut self.surface
+    }
+
     pub fn redraw(&mut self) {
         let canvas = self.surface.canvas();
-        canvas.clear(Color::WHITE);
+        canvas.clear(self.render_state.clear_color);
 
-        let mut paint = Paint::default();
-        paint.set_anti_alias(true);
-        paint.set_color(Color::BLACK);
+        if let Some(rect) = self.render_state.rect {
+            let mut paint = Paint::default();
+            paint.set_anti_alias(true);
+            paint.set_color(self.render_state.fill_color);
+            canvas.draw_rect(rect, &paint);
+        }
 
-        let mut p = Paint::default();
-        p.set_anti_alias(true);
-        p.set_color(Color::from_argb(255, 255, 0, 0));
-        canvas.draw_rect(Rect::from_xywh(40.0, 40.0, 200.0, 120.0), &p);
+        if !self.text.is_empty() {
+            let mut paint = Paint::default();
+            paint.set_anti_alias(true);
+            paint.set_color(Color::BLACK);
 
-        let fm = FontMgr::new();
-        let tf = fm
-            .match_family_style("DejaVu Sans", FontStyle::normal())
-            .or_else(|| fm.match_family_style("Sans", FontStyle::normal()))
-            .expect("No system fonts found");
+            let fm = FontMgr::new();
+            let tf = fm
+                .match_family_style("DejaVu Sans", FontStyle::normal())
+                .or_else(|| fm.match_family_style("Sans", FontStyle::normal()))
+                .expect("No system fonts found");
 
-        let font = Font::new(tf, 48.0);
-        canvas.draw_str(&self.text, (40, 120), &font, &paint);
+            let font = Font::new(tf, 48.0);
+            canvas.draw_str(&self.text, (40, 120), &font, &paint);
+        }
 
         if let Some(gr) = self.gr_context.as_mut() {
             gr.flush_and_submit();

@@ -11,7 +11,7 @@ use drm::buffer::{Buffer, DrmFourcc};
 use drm::control::{Device as ControlDevice, Mode, connector, crtc};
 use skia_safe::{ColorType, ImageInfo, surfaces};
 
-use crate::renderer::Renderer;
+use crate::renderer::{RenderState, Renderer};
 
 struct Card(File);
 
@@ -71,7 +71,12 @@ fn first_connected_connector(
     Err("no connected DRM connectors found".into())
 }
 
-pub fn run(stop: Arc<AtomicBool>, text: Arc<Mutex<String>>, dirty: Arc<AtomicBool>) {
+pub fn run(
+    stop: Arc<AtomicBool>,
+    text: Arc<Mutex<String>>,
+    dirty: Arc<AtomicBool>,
+    render_state: Arc<Mutex<RenderState>>,
+) {
     let card = match open_card() {
         Ok(card) => card,
         Err(e) => {
@@ -140,7 +145,11 @@ pub fn run(stop: Arc<AtomicBool>, text: Arc<Mutex<String>>, dirty: Arc<AtomicBoo
         .expect("Failed to create raster surface for KMS");
 
     let initial_text = text.lock().unwrap_or_else(|e| e.into_inner()).clone();
-    let mut renderer = Renderer::from_surface(surface, None, initial_text);
+    let initial_state = {
+        let state = render_state.lock().unwrap_or_else(|e| e.into_inner());
+        *state
+    };
+    let mut renderer = Renderer::from_surface(surface, None, initial_text, initial_state);
     renderer.redraw();
 
     loop {
@@ -149,7 +158,9 @@ pub fn run(stop: Arc<AtomicBool>, text: Arc<Mutex<String>>, dirty: Arc<AtomicBoo
         }
         if dirty.swap(false, Ordering::Relaxed) {
             let updated = text.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            let state = render_state.lock().unwrap_or_else(|e| e.into_inner());
             renderer.set_text(updated);
+            renderer.set_state(*state);
             renderer.redraw();
         }
         std::thread::sleep(Duration::from_millis(500));

@@ -9,4 +9,16 @@ defmodule ScenicDriverSkia.Native do
 
   @doc false
   def set_text(_text), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc false
+  def submit_script(_script), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc false
+  def set_clear_color(_color), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc false
+  def reset_scene, do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc false
+  def set_raster_output(_path), do: :erlang.nif_error(:nif_not_loaded)
 end
