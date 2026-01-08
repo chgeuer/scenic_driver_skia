@@ -16,3 +16,5 @@ Backends:
 - `SCENIC_BACKEND=wayland` (default) renders through a Wayland window.
 - `SCENIC_BACKEND=drm` renders directly on Linux DRM hardware (tested with AMD GPUs).
   - Override the DRM device path with `SCENIC_DRM_CARD` (defaults to `/dev/dri/card0`).
+- `SCENIC_BACKEND=raster` renders to an offscreen surface (container-friendly).
+  - Set the driver option `raster_output: "path/to.png"` to write a PNG.

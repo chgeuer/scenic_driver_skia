@@ -1,39 +1,38 @@
 # Scenic Driver Skia Plan
 
 ## Goal
-Implement a Scenic driver backed by a Rust Skia renderer via Rustler, starting with a minimal driver that only logs callbacks and then layering in rendering and input support.
+Implement the shortest path to display a Scenic rectangle on screen using a Rust/Skia renderer via Rustler.
 
 ## Incremental Steps
-1. **Scaffold driver module**
-   - Provide a Scenic driver module that logs each callback.
-   - Ensure the module can be registered as a ViewPort driver.
-   - Add tests that start a ViewPort and assert logging callbacks.
+1. **Script ingestion (Elixir)**
+   - In `update_scene/2`, fetch scripts from the ViewPort and serialize them.
+   - Send serialized scripts to the NIF (`submit_script/1`).
+   - Add tests that validate the serialized output for a simple rectangle.
 
-2. **Define and validate options**
-   - Add an options schema (backend selection, window settings, debug flags).
-   - Validate options using `NimbleOptions`.
-   - Add tests that verify option validation errors and defaults.
+2. **Minimal script parser (Rust)**
+   - Parse `fill_color`, `translate`, and `draw_rect` ops from the Scenic script binary.
+   - Skip `draw_script` ops so root graphs don’t fail parsing.
+   - Store render state (clear color, fill, translate, rect) and emit a rectangle draw call.
+   - Add Rust unit tests for opcode parsing and edge cases.
 
-3. **Rust NIF integration**
-   - Add NIF APIs for start/stop and basic render lifecycle.
-   - Ensure Elixir driver starts/stops the renderer cleanly.
-   - Add tests that exercise NIF start/stop from the driver.
+3. **Skia draw path**
+   - Use the parsed ops to draw a filled rectangle on the Skia canvas.
+   - Trigger redraw on script updates (Wayland, DRM, and raster).
+   - Add an integration test that starts a ViewPort with a rect graph and asserts no errors (log-based).
 
-4. **Script handling**
-   - Fetch scripts from the ViewPort and serialize them.
-   - Feed scripts into the renderer incrementally (per update batch).
-   - Add tests that confirm script updates trigger renderer calls.
+4. **Thin lifecycle wiring**
+   - Ensure driver start/stop aligns with renderer lifecycle.
+   - Keep backend choice (Wayland/DRM) stable while rendering the rectangle.
+   - Add tests that ensure start/stop still work with script updates.
 
-5. **Input plumbing**
-   - Forward requested inputs to the backend.
-   - Emit Scenic input events from backend sources.
-   - Add tests for requested input updates and emitted input events.
-
-6. **Backends and cleanup**
-   - Support Wayland and DRM/KMS paths behind a clean abstraction.
-   - Ensure proper shutdown and resource cleanup across backends.
-   - Add tests that cover backend selection and shutdown paths.
+5. **Next minimal rendering features**
+   - Add scale/rotate/transform op support.
+   - Add stroke support (width + color).
+   - Expand script op coverage for text/image to unblock basic UI.
 
 ## Done So Far
-- Driver module logs callbacks and returns driver state.
-- Local Scenic dependency wired for development.
+- Driver module ingests scripts and forwards them to the Rust NIF.
+- Rust parser handles `fill_color`, `translate`, and `draw_rect`; skips `draw_script`.
+- Raster backend added for container testing with a `raster_output` option.
+- Option validation implemented and tested.
+- Demo scripts for Wayland and raster backends added.

@@ -6,6 +6,7 @@
 *.beam
 **/*.ez
 /priv/native
+/priv/*.png
 
 # Rust build artifacts
 /native/scenic_driver_skia/target
