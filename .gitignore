@@ -7,6 +7,7 @@
 **/*.ez
 /priv/native
 /priv/*.png
+/priv/__scenic
 
 # Rust build artifacts
 /native/scenic_driver_skia/target
