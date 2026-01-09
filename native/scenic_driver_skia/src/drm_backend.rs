@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use drm::Device as BasicDevice;
 use drm::buffer::{Buffer, DrmFourcc};
-use drm::control::{Device as ControlDevice, Mode, connector, crtc};
+use drm::control::{ClipRect, Device as ControlDevice, Mode, connector, crtc, framebuffer};
 use skia_safe::{ColorType, ImageInfo, surfaces};
 
 use crate::renderer::{RenderState, Renderer};
@@ -148,6 +148,7 @@ pub fn run(
     let mut renderer = Renderer::from_surface(surface, None, initial_text);
     if let Ok(state) = render_state.lock() {
         renderer.redraw(&state);
+        mark_framebuffer_dirty(&card, framebuffer, width, height);
     }
 
     loop {
@@ -159,8 +160,14 @@ pub fn run(
             renderer.set_text(updated);
             if let Ok(state) = render_state.lock() {
                 renderer.redraw(&state);
+                mark_framebuffer_dirty(&card, framebuffer, width, height);
             }
         }
         std::thread::sleep(Duration::from_millis(500));
     }
+}
+
+fn mark_framebuffer_dirty(card: &Card, framebuffer: framebuffer::Handle, width: u16, height: u16) {
+    let clip = ClipRect::new(0, 0, width, height);
+    let _ = card.dirty_framebuffer(framebuffer, &[clip]);
 }
