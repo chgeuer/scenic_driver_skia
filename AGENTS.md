@@ -7,9 +7,12 @@ This repository contains a Rust project with an Elixir wrapper. Please follow th
 - Run `mix format` and `mix test` to validate Elixir changes.
 - Add or update tests with each incremental step and keep them passing.
 - Document test commands you run in your final summary, noting any failures or external blockers.
-- Source `~/.bashrc` to activate `mise` before running `mix` tasks if needed.
 - Prefer small, focused modules. Keep rendering logic backend-agnostic and isolate backend/windowing concerns in their own modules.
 - Avoid adding unnecessary dependencies; prefer the standard library where practical.
+- Reference Scenic source code at `/workspace/scenic` and local driver implementations at `/workspace/scenci_driver_local` when needed.
+- Always address warnings (compiler, runtime, or test) rather than ignoring them.
+- See `GUIDES.md` for architecture and driver data-flow notes.
+- See `ASSETS.md` for asset pipeline and font alias details.
 
 These instructions apply to all files in this repository.
 

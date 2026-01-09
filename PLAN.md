@@ -1,39 +1,31 @@
 # Scenic Driver Skia Plan
 
 ## Goal
-Implement the shortest path to display a Scenic rectangle on screen using a Rust/Skia renderer via Rustler, with a container-friendly raster backend for validation.
+Implement a cache-based Scenic script renderer using Rust/Skia via Rustler, with shared backends (Wayland/DRM/raster) and enough primitives to render demo scripts (rects and text).
 
-## Incremental Steps
-1. **Script ingestion (Elixir)**
-   - In `update_scene/2`, fetch scripts from the ViewPort and serialize them.
-   - Send serialized scripts to the NIF (`submit_script/1`).
-   - Add tests that validate the serialized output for a simple rectangle.
+## Current Status
+Completed:
+- Script cache in Rust keyed by script id; renderer replays cached ops per redraw.
+- `draw_script` resolves cached sub-scripts with push/pop draw-state stack.
+- Parser supports `fill_color`, `translate`, `draw_rect`, and `draw_text`.
+- Driver submits scripts by id and deletes stale scripts.
+- Raster backend validated with `raster_output`; Wayland/DRM share the same render state.
+- Demos updated with colored text; assets module with local fonts + aliases.
+- Script ingestion tests and lifecycle coverage added.
 
-2. **Minimal script parser (Rust)**
-   - Parse `fill_color`, `translate`, and `draw_rect` ops from the Scenic script binary.
-   - Skip `draw_script` ops so root graphs don’t fail parsing.
-   - Store render state (clear color, fill, translate, rect) and emit a rectangle draw call.
-   - Add Rust unit tests for opcode parsing and edge cases.
+## Next Steps
+1. **Rendering primitives**
+   - Add scale/rotate/transform ops and stroke styling.
+   - Expand text styling (font, size, align, baseline) beyond placeholders.
+   - Add image rendering and image fill support.
 
-3. **Skia draw path**
-   - Use the parsed ops to draw a filled rectangle on the Skia canvas.
-   - Trigger redraw on script updates (Wayland, DRM, and raster).
-   - Add an integration test that starts a ViewPort with a rect graph and asserts no errors (log-based).
+2. **Performance**
+   - Consider caching Skia `Picture`s per script id for static sub-graphs.
+   - Reduce allocations in script parsing and replay.
 
-4. **Thin lifecycle wiring**
-   - Ensure driver start/stop aligns with renderer lifecycle.
-   - Keep backend choice (Wayland/DRM) stable while rendering the rectangle.
-   - Add tests that ensure start/stop still work with script updates.
+3. **Testing**
+   - Add integration coverage that renders text/image to raster and asserts output metadata.
+   - Add a regression test for `draw_script` recursion guard.
 
-5. **Next minimal rendering features**
-   - Add scale/rotate/transform op support.
-   - Add stroke support (width + color).
-   - Expand script op coverage for text/image to unblock basic UI.
+4. **Backend polish**
    - Replace deprecated Skia image encode API in the raster backend.
-
-## Done So Far
-- Driver module ingests scripts and forwards them to the Rust NIF.
-- Rust parser handles `fill_color`, `translate`, and `draw_rect`; skips `draw_script`.
-- Raster backend added for container testing with a `raster_output` option.
-- Option validation implemented and tested.
-- Demo scripts for Wayland and raster backends added.
