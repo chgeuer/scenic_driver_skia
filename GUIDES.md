@@ -52,6 +52,10 @@ The renderer does not parse per frame. It:
 - Replays cached ops with a draw-state stack and canvas transforms.
 - For `DrawScript`, it recursively replays the referenced script.
 
+## Performance Notes
+- The driver batches script submissions and only signals one redraw for updates.
+- Enable the driver option `debug: true` to log cached script counts periodically.
+
 ## Backends
 All backends share the same render state:
 - Wayland (windowed, GL surface)

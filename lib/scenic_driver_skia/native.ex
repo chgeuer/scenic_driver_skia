@@ -17,6 +17,9 @@ defmodule ScenicDriverSkia.Native do
   def submit_script_with_id(_id, _script), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
+  def submit_scripts(_scripts), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc false
   def del_script(_id), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
@@ -27,4 +30,7 @@ defmodule ScenicDriverSkia.Native do
 
   @doc false
   def set_raster_output(_path), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc false
+  def script_count, do: :erlang.nif_error(:nif_not_loaded)
 end

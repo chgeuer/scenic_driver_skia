@@ -45,11 +45,11 @@ defmodule ScenicDriverSkia.Driver do
     case Native.start(opts[:backend]) do
       :ok ->
         maybe_set_raster_output(opts)
-        {:ok, assign(driver, :opts, opts)}
+        {:ok, assign(driver, opts: opts, update_count: 0)}
 
       {:ok, _} ->
         maybe_set_raster_output(opts)
-        {:ok, assign(driver, :opts, opts)}
+        {:ok, assign(driver, opts: opts, update_count: 0)}
 
       {:error, reason} ->
         {:stop, reason}
@@ -76,27 +76,37 @@ defmodule ScenicDriverSkia.Driver do
   def update_scene(script_ids, %{viewport: vp} = driver) do
     Logger.debug("ScenicDriverSkia.Driver update_scene: #{inspect(script_ids)}")
 
-    Enum.each(script_ids, fn id ->
-      case ViewPort.get_script(vp, id) do
-        {:ok, script} ->
-          binary =
-            script
-            |> Script.serialize()
-            |> IO.iodata_to_binary()
+    updates =
+      Enum.reduce(script_ids, [], fn id, acc ->
+        case ViewPort.get_script(vp, id) do
+          {:ok, script} ->
+            binary =
+              script
+              |> Script.serialize()
+              |> IO.iodata_to_binary()
 
-          Native.submit_script_with_id(to_string(id), binary)
-          |> case do
-            :ok -> :ok
-            {:ok, _} -> :ok
-            {:error, reason} -> Logger.warning("submit_script failed: #{inspect(reason)}")
-            other -> Logger.warning("submit_script returned #{inspect(other)}")
-          end
+            [{to_string(id), binary} | acc]
 
-        _ ->
-          :ok
-      end
-    end)
+          _ ->
+            acc
+        end
+      end)
 
+    case updates do
+      [] ->
+        :ok
+
+      _ ->
+        Native.submit_scripts(updates)
+        |> case do
+          :ok -> :ok
+          {:ok, _} -> :ok
+          {:error, reason} -> Logger.warning("submit_scripts failed: #{inspect(reason)}")
+          other -> Logger.warning("submit_scripts returned #{inspect(other)}")
+        end
+    end
+
+    driver = maybe_log_script_count(driver)
     {:ok, driver}
   end
 
@@ -144,5 +154,28 @@ defmodule ScenicDriverSkia.Driver do
       "kms" -> "drm"
       other -> other
     end
+  end
+
+  defp maybe_log_script_count(%{assigns: %{opts: opts, update_count: count}} = driver) do
+    count = count + 1
+    driver = assign(driver, :update_count, count)
+
+    if opts[:debug] && rem(count, 60) == 0 do
+      case Native.script_count() do
+        {:ok, total} ->
+          Logger.info("ScenicDriverSkia.Driver cached scripts: #{total}")
+
+        total when is_integer(total) ->
+          Logger.info("ScenicDriverSkia.Driver cached scripts: #{total}")
+
+        {:error, reason} ->
+          Logger.warning("script_count failed: #{inspect(reason)}")
+
+        other ->
+          Logger.warning("script_count returned #{inspect(other)}")
+      end
+    end
+
+    driver
   end
 end

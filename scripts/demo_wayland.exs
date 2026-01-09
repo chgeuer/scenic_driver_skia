@@ -1,4 +1,6 @@
 defmodule ScenicDriverSkia.DemoWayland do
+  require Logger
+
   defmodule DemoScene do
     use Scenic.Scene
     import Scenic.Clock.Components
@@ -46,13 +48,16 @@ defmodule ScenicDriverSkia.DemoWayland do
   end
 
   def run do
+    Logger.configure(level: :info)
     {:ok, _} = DynamicSupervisor.start_link(name: :scenic_viewports, strategy: :one_for_one)
 
     {:ok, _vp} =
       Scenic.ViewPort.start(
         size: {400, 300},
         default_scene: DemoScene,
-        drivers: [[module: ScenicDriverSkia.Driver, name: :skia_driver, backend: :wayland]]
+        drivers: [
+          [module: ScenicDriverSkia.Driver, name: :skia_driver, backend: :wayland, debug: true]
+        ]
       )
 
     Process.sleep(:infinity)
