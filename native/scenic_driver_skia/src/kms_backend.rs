@@ -55,13 +55,13 @@ fn first_connected_connector(
 
         let mode = info
             .modes()
-            .get(0)
+            .first()
             .cloned()
             .ok_or_else(|| format!("connector {handle:?} has no modes"))?;
 
         let crtc = resources
             .crtcs()
-            .get(0)
+            .first()
             .copied()
             .ok_or_else(|| "no available CRTCs".to_string())?;
 

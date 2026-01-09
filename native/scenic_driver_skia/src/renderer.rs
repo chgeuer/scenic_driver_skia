@@ -202,16 +202,15 @@ impl Renderer {
             num_samples,
             stencil_size,
         } = self.source
+            && let Some(context) = self.gr_context.as_mut()
         {
-            if let Some(context) = self.gr_context.as_mut() {
-                self.surface = create_skia_surface(
-                    (dimensions.0 as i32, dimensions.1 as i32),
-                    fb_info,
-                    context,
-                    num_samples,
-                    stencil_size,
-                );
-            }
+            self.surface = create_skia_surface(
+                (dimensions.0 as i32, dimensions.1 as i32),
+                fb_info,
+                context,
+                num_samples,
+                stencil_size,
+            );
         }
     }
 }
@@ -328,14 +327,14 @@ fn draw_script(
                     Some(font_id) => font_from_asset(font_id, draw_state.font_size),
                     None => default_font(draw_state.font_size),
                 };
-                if let Some(font) = font.as_ref() {
-                    if !text.is_empty() {
-                        let mut paint = Paint::default();
-                        paint.set_anti_alias(true);
-                        paint.set_color(draw_state.fill_color);
-                        let (dx, dy) = draw_state.text_offsets(text, font, &paint);
-                        canvas.draw_str(text, (dx, dy), font, &paint);
-                    }
+                if let Some(font) = font.as_ref()
+                    && !text.is_empty()
+                {
+                    let mut paint = Paint::default();
+                    paint.set_anti_alias(true);
+                    paint.set_color(draw_state.fill_color);
+                    let (dx, dy) = draw_state.text_offsets(text, font, &paint);
+                    canvas.draw_str(text, (dx, dy), font, &paint);
                 }
             }
             ScriptOp::Font(font_id) => draw_state.font_id = Some(font_id.clone()),
@@ -368,10 +367,10 @@ fn typeface_from_asset(font_id: &str) -> Option<Typeface> {
     static FONT_CACHE: OnceLock<Mutex<HashMap<String, Typeface>>> = OnceLock::new();
     let cache = FONT_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
 
-    if let Ok(cache) = cache.lock() {
-        if let Some(typeface) = cache.get(font_id) {
-            return Some(typeface.clone());
-        }
+    if let Ok(cache) = cache.lock()
+        && let Some(typeface) = cache.get(font_id)
+    {
+        return Some(typeface.clone());
     }
 
     let mut path = std::env::current_dir().ok()?;

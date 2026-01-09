@@ -92,10 +92,8 @@ impl App {
 
         self.running = running;
         self.running_flag.store(running, Ordering::Relaxed);
-        if running {
-            if let Some(env) = self.env.as_ref() {
-                env.window.request_redraw();
-            }
+        if running && let Some(env) = self.env.as_ref() {
+            env.window.request_redraw();
         }
     }
 }
