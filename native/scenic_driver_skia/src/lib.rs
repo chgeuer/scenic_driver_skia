@@ -1,5 +1,5 @@
 mod backend;
-mod kms_backend;
+mod drm_backend;
 mod raster_backend;
 mod renderer;
 
@@ -42,7 +42,6 @@ fn driver_state() -> &'static Mutex<Option<DriverHandle>> {
 pub fn start(backend: Option<String>) -> Result<(), String> {
     let backend = backend
         .map(|b| b.to_lowercase())
-        .map(|b| if b == "kms" { String::from("drm") } else { b })
         .unwrap_or_else(|| String::from("wayland"));
 
     let mut state = driver_state()
@@ -84,7 +83,7 @@ pub fn start(backend: Option<String>) -> Result<(), String> {
         let thread = thread::Builder::new()
             .name(thread_name)
             .spawn(move || {
-                kms_backend::run(
+                drm_backend::run(
                     stop_for_thread,
                     text_for_thread,
                     dirty_for_thread,

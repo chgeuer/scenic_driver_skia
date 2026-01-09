@@ -11,7 +11,7 @@ defmodule ScenicDriverSkia.DriverOptionsTest do
     assert Keyword.get(opts[:window], :resizeable) == false
 
     assert {:ok, opts} =
-             Driver.validate_opts(backend: :kms, debug: true, raster_output: "out.png")
+             Driver.validate_opts(backend: :drm, debug: true, raster_output: "out.png")
 
     assert opts[:backend] == "drm"
     assert opts[:debug] == true

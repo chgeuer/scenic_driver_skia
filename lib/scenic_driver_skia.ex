@@ -44,9 +44,5 @@ defmodule ScenicDriverSkia do
     backend
     |> to_string()
     |> String.downcase()
-    |> case do
-      "kms" -> "drm"
-      other -> other
-    end
   end
 end

@@ -150,10 +150,6 @@ defmodule ScenicDriverSkia.Driver do
     backend
     |> to_string()
     |> String.downcase()
-    |> case do
-      "kms" -> "drm"
-      other -> other
-    end
   end
 
   defp maybe_log_script_count(%{assigns: %{opts: opts, update_count: count}} = driver) do
