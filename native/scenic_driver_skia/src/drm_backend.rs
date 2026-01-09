@@ -140,14 +140,16 @@ pub fn run(
         None,
     );
 
-    let surface = surfaces::wrap_pixels(&image_info, mapping.as_mut(), stride, None)
+    let mut scratch = vec![0u8; mapping.len()];
+    let surface = surfaces::wrap_pixels(&image_info, scratch.as_mut_slice(), stride, None)
         .map(|borrowed| unsafe { borrowed.release() })
-        .expect("Failed to create raster surface for KMS");
+        .expect("Failed to create raster surface for DRM");
 
     let initial_text = text.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let mut renderer = Renderer::from_surface(surface, None, initial_text);
     if let Ok(state) = render_state.lock() {
         renderer.redraw(&state);
+        mapping.as_mut().copy_from_slice(&scratch);
         mark_framebuffer_dirty(&card, framebuffer, width, height);
     }
 
@@ -160,6 +162,7 @@ pub fn run(
             renderer.set_text(updated);
             if let Ok(state) = render_state.lock() {
                 renderer.redraw(&state);
+                mapping.as_mut().copy_from_slice(&scratch);
                 mark_framebuffer_dirty(&card, framebuffer, width, height);
             }
         }
