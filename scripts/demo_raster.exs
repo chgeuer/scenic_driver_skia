@@ -6,7 +6,8 @@ defmodule ScenicDriverSkia.DemoRaster do
     def init(scene, _args, _opts) do
       graph =
         Scenic.Graph.build()
-        |> rect({200, 120}, fill: :red, translate: {50, 50})
+        |> rect({200, 120}, fill: :green, translate: {50, 50})
+        |> text("Skia Raster", fill: :orange, translate: {60, 90})
 
       scene = Scenic.Scene.push_graph(scene, graph)
       {:ok, scene}

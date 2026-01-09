@@ -4,12 +4,25 @@ defmodule ScenicDriverSkia.DemoWayland do
     import Scenic.Primitives
 
     def init(scene, _args, _opts) do
+      Process.send_after(self(), :change_color, 3_000)
+
       graph =
         Scenic.Graph.build()
         |> rect({200, 120}, fill: :blue, translate: {50, 50})
+        |> text("Skia Wayland", fill: :yellow, translate: {60, 90})
 
       scene = Scenic.Scene.push_graph(scene, graph)
       {:ok, scene}
+    end
+
+    def handle_info(:change_color, scene) do
+      graph =
+        Scenic.Graph.build()
+        |> rect({200, 120}, fill: :red, translate: {50, 50})
+        |> text("Skia Wayland", fill: :yellow, translate: {60, 90})
+
+      scene = Scenic.Scene.push_graph(scene, graph)
+      {:noreply, scene}
     end
   end
 

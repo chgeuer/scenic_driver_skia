@@ -1,0 +1,9 @@
+defmodule ScenicDriverSkia.Assets do
+  use Scenic.Assets.Static,
+    otp_app: :scenic_driver_skia,
+    sources: ["assets", {:scenic, "assets"}],
+    aliases: [
+      roboto: "fonts/roboto.ttf",
+      roboto_mono: "fonts/roboto_mono.ttf"
+    ]
+end
