@@ -23,6 +23,8 @@ struct InputDevice {
     device: Device,
     abs_x: Option<AbsAxisState>,
     abs_y: Option<AbsAxisState>,
+    abs_mode: AbsMode,
+    last_abs_scaled: Option<(f32, f32)>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -30,6 +32,12 @@ struct AbsAxisState {
     value: i32,
     min: i32,
     max: i32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AbsMode {
+    Absolute,
+    RelativeFromAbs,
 }
 
 pub struct DrmInput {
@@ -84,12 +92,16 @@ impl DrmInput {
                         self.handle_rel_event(axis, event.value(), mask);
                     }
                     InputEventKind::AbsAxis(axis) => {
-                        let pos = {
+                        let action = {
                             let device = &mut self.devices[idx];
-                            update_abs_state(device, axis, event.value(), self.screen_size)
+                            update_abs_action(device, axis, event.value(), self.screen_size)
                         };
-                        if let Some((x, y)) = pos {
-                            self.handle_abs_position(x, y, mask);
+                        match action {
+                            AbsAction::Absolute(x, y) => self.handle_abs_position(x, y, mask),
+                            AbsAction::Relative(dx, dy) => {
+                                self.handle_abs_relative(dx, dy, mask);
+                            }
+                            AbsAction::None => {}
                         }
                     }
                     _ => {}
@@ -203,6 +215,19 @@ impl DrmInput {
         }
     }
 
+    fn handle_abs_relative(&mut self, dx: f32, dy: f32, mask: u32) {
+        let (mut x, mut y) = self.cursor_pos;
+        x += dx;
+        y += dy;
+        let (width, height) = self.screen_size;
+        x = x.clamp(0.0, width.saturating_sub(1) as f32);
+        y = y.clamp(0.0, height.saturating_sub(1) as f32);
+        self.cursor_pos = (x, y);
+        if mask & INPUT_MASK_CURSOR_POS != 0 {
+            self.push_input(InputEvent::CursorPos { x, y });
+        }
+    }
+
     fn update_modifiers(&mut self, key: Key, pressed: bool) {
         match key {
             Key::KEY_LEFTSHIFT | Key::KEY_RIGHTSHIFT => self.modifiers.shift = pressed,
@@ -243,11 +268,14 @@ fn enumerate_devices() -> Vec<InputDevice> {
             Err(_) => continue,
         };
         set_non_blocking(device.as_raw_fd());
+        let abs_mode = detect_abs_mode(&device);
         let (abs_x, abs_y) = init_abs_axes(&device);
         devices.push(InputDevice {
             device,
             abs_x,
             abs_y,
+            abs_mode,
+            last_abs_scaled: None,
         });
     }
 
@@ -261,12 +289,18 @@ fn is_event_device(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn update_abs_state(
+enum AbsAction {
+    None,
+    Absolute(f32, f32),
+    Relative(f32, f32),
+}
+
+fn update_abs_action(
     device: &mut InputDevice,
     axis: AbsoluteAxisType,
     value: i32,
     screen_size: (u32, u32),
-) -> Option<(f32, f32)> {
+) -> AbsAction {
     let fallback = (
         screen_size.0.saturating_sub(1) as i32,
         screen_size.1.saturating_sub(1) as i32,
@@ -278,18 +312,29 @@ fn update_abs_state(
         AbsoluteAxisType::ABS_Y => {
             device.abs_y = Some(update_axis_state(device.abs_y, value, fallback.1));
         }
-        _ => return None,
+        _ => return AbsAction::None,
     }
 
     let (abs_x, abs_y) = match (device.abs_x, device.abs_y) {
         (Some(abs_x), Some(abs_y)) => (abs_x, abs_y),
-        _ => return None,
+        _ => return AbsAction::None,
     };
 
-    Some((
+    let scaled = (
         scale_abs_value(abs_x, screen_size.0),
         scale_abs_value(abs_y, screen_size.1),
-    ))
+    );
+
+    if device.abs_mode == AbsMode::RelativeFromAbs {
+        let (dx, dy) = match device.last_abs_scaled {
+            Some((last_x, last_y)) => (scaled.0 - last_x, scaled.1 - last_y),
+            None => (0.0, 0.0),
+        };
+        device.last_abs_scaled = Some(scaled);
+        AbsAction::Relative(dx, dy)
+    } else {
+        AbsAction::Absolute(scaled.0, scaled.1)
+    }
 }
 
 fn update_axis_state(current: Option<AbsAxisState>, value: i32, fallback_max: i32) -> AbsAxisState {
@@ -336,6 +381,32 @@ fn axis_state_from_abs(info: Option<&input_absinfo>) -> Option<AbsAxisState> {
         min: info.minimum,
         max: info.maximum,
     })
+}
+
+fn detect_abs_mode(device: &Device) -> AbsMode {
+    let has_abs = device.supported_absolute_axes().is_some_and(|axes| {
+        axes.contains(AbsoluteAxisType::ABS_X) && axes.contains(AbsoluteAxisType::ABS_Y)
+    });
+    if !has_abs {
+        return AbsMode::Absolute;
+    }
+
+    if is_touchpad(device) {
+        return AbsMode::RelativeFromAbs;
+    }
+
+    AbsMode::Absolute
+}
+
+fn is_touchpad(device: &Device) -> bool {
+    let Some(keys) = device.supported_keys() else {
+        return false;
+    };
+    keys.contains(Key::BTN_TOOL_FINGER)
+        || keys.contains(Key::BTN_TOOL_DOUBLETAP)
+        || keys.contains(Key::BTN_TOOL_TRIPLETAP)
+        || keys.contains(Key::BTN_TOOL_QUADTAP)
+        || keys.contains(Key::BTN_TOOL_QUINTTAP)
 }
 
 fn set_non_blocking(fd: i32) {
@@ -708,6 +779,8 @@ mod tests {
             device,
             abs_x,
             abs_y,
+            abs_mode: AbsMode::Absolute,
+            last_abs_scaled: None,
         };
 
         let input_mask = Arc::new(AtomicU32::new(
