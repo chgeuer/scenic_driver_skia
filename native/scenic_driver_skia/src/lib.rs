@@ -885,7 +885,7 @@ mod tests {
         assert!(ops.contains(&ScriptOp::StrokeWidth(2.0)));
         assert!(
             ops.contains(&ScriptOp::StrokeColor(skia_safe::Color::from_argb(
-                0xFF, 0x00, 0x00, 0xFF
+                0xFF, 0x00, 0xFF, 0x00
             )))
         );
         assert!(ops.contains(&ScriptOp::DrawLine {
