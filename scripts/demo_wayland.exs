@@ -75,6 +75,16 @@ defmodule ScenicDriverSkia.DemoWayland do
       {:halt, scene}
     end
 
+    def handle_event({:btn_pressed, :demo_btn}, _from, scene) do
+      Logger.info("demo_wayland handle_event button_pressed")
+      {:halt, scene}
+    end
+
+    def handle_event({:btn_released, :demo_btn}, _from, scene) do
+      Logger.info("demo_wayland handle_event button_released")
+      {:halt, scene}
+    end
+
     def handle_event({:click, :demo_btn}, _from, scene) do
       Logger.info("demo_wayland handle_event button_click")
       {:halt, scene}
