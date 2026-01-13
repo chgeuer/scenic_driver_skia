@@ -20,18 +20,51 @@ defmodule ScenicDriverSkia.DemoDrm do
       scene =
         scene
         |> Scenic.Scene.assign(:rect_fill, :blue)
-        |> Scenic.Scene.assign(:input_text, "input: none")
+        |> Scenic.Scene.assign(:cursor_pos_text, "cursor_pos: none")
+        |> Scenic.Scene.assign(:cursor_button_text, "cursor_button: none")
+        |> Scenic.Scene.assign(:key_text, "key: none")
 
       scene = Scenic.Scene.push_graph(scene, build_graph(scene))
       {:ok, scene}
     end
 
-    def handle_input(event, _context, scene) do
+    def handle_input({:cursor_pos, {x, y}}, _context, scene) do
       scene =
         scene
-        |> Scenic.Scene.assign(:input_text, "input: " <> format_input(event))
+        |> Scenic.Scene.assign(:cursor_pos_text, format_cursor_pos(x, y))
         |> Scenic.Scene.push_graph(build_graph(scene))
 
+      {:noreply, scene}
+    end
+
+    def handle_input({:cursor_button, {button, action, _mods, {x, y}}}, _context, scene) do
+      scene =
+        scene
+        |> Scenic.Scene.assign(:cursor_button_text, format_cursor_button(button, action, x, y))
+        |> Scenic.Scene.push_graph(build_graph(scene))
+
+      {:noreply, scene}
+    end
+
+    def handle_input({:key, {key, action, _mods}}, _context, scene) do
+      scene =
+        scene
+        |> Scenic.Scene.assign(:key_text, format_key(key, action))
+        |> Scenic.Scene.push_graph(build_graph(scene))
+
+      {:noreply, scene}
+    end
+
+    def handle_input({:codepoint, {codepoint, _mods}}, _context, scene) do
+      scene =
+        scene
+        |> Scenic.Scene.assign(:key_text, "codepoint: #{codepoint}")
+        |> Scenic.Scene.push_graph(build_graph(scene))
+
+      {:noreply, scene}
+    end
+
+    def handle_input(_event, _context, scene) do
       {:noreply, scene}
     end
 
@@ -54,20 +87,30 @@ defmodule ScenicDriverSkia.DemoDrm do
       Scenic.Graph.build()
       |> rect({200, 120}, fill: scene.assigns.rect_fill, translate: {50, 50})
       |> text("Skia DRM", fill: :yellow, translate: {60, 90})
-      |> text(scene.assigns.input_text, fill: :white, translate: {60, 140})
+      |> text(scene.assigns.cursor_pos_text, fill: :white, translate: {60, 140})
+      |> text(scene.assigns.cursor_button_text, fill: :white, translate: {60, 165})
+      |> text(scene.assigns.key_text, fill: :white, translate: {60, 190})
       |> analog_clock(radius: 50, seconds: true, translate: {300, 160}, theme: :light)
       |> digital_clock(
         format: :hours_12,
         seconds: true,
-        translate: {50, 200},
+        translate: {50, 215},
         font: :roboto_mono,
         font_size: 18,
         fill: :white
       )
     end
 
-    defp format_input(event) do
-      inspect(event, limit: 6, printable_limit: 120)
+    defp format_cursor_pos(x, y) do
+      "cursor_pos: #{Float.round(x, 1)}, #{Float.round(y, 1)}"
+    end
+
+    defp format_cursor_button(button, action, x, y) do
+      "cursor_button: #{button} #{action} @ #{Float.round(x, 1)}, #{Float.round(y, 1)}"
+    end
+
+    defp format_key(key, action) do
+      "key: #{key} #{action}"
     end
   end
 
