@@ -257,6 +257,9 @@ fn enumerate_devices() -> Vec<InputDevice> {
         Ok(entries) => entries,
         Err(_) => return devices,
     };
+    let log_enabled = std::env::var("SCENIC_DRM_INPUT_LOG")
+        .map(|v| v == "1")
+        .unwrap_or(false);
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -268,8 +271,15 @@ fn enumerate_devices() -> Vec<InputDevice> {
             Err(_) => continue,
         };
         set_non_blocking(device.as_raw_fd());
-        let abs_mode = detect_abs_mode(&device);
+        let (abs_mode, info) = detect_abs_mode(&device);
         let (abs_x, abs_y) = init_abs_axes(&device);
+        if log_enabled {
+            let name = device.name().unwrap_or("unknown");
+            eprintln!(
+                "drm_input device={:?} name=\"{}\" abs_mode={:?} {}",
+                path, name, abs_mode, info
+            );
+        }
         devices.push(InputDevice {
             device,
             abs_x,
@@ -383,31 +393,20 @@ fn axis_state_from_abs(info: Option<&input_absinfo>) -> Option<AbsAxisState> {
     })
 }
 
-fn detect_abs_mode(device: &Device) -> AbsMode {
+fn detect_abs_mode(device: &Device) -> (AbsMode, String) {
     let has_abs = device.supported_absolute_axes().is_some_and(|axes| {
         axes.contains(AbsoluteAxisType::ABS_X) && axes.contains(AbsoluteAxisType::ABS_Y)
     });
     if !has_abs {
-        return AbsMode::Absolute;
+        return (AbsMode::Absolute, "abs_axes=none".to_string());
     }
 
-    if is_touchpad(device) {
-        return AbsMode::RelativeFromAbs;
-    }
-
-    AbsMode::Absolute
-}
-
-fn is_touchpad(device: &Device) -> bool {
     let props = device.properties();
-    if props.contains(PropType::DIRECT) {
-        return false;
-    }
-
-    let prop_hint = props.contains(PropType::BUTTONPAD)
-        || props.contains(PropType::TOPBUTTONPAD)
-        || props.contains(PropType::SEMI_MT);
-    let pointer_hint = props.contains(PropType::POINTER);
+    let direct_prop = props.contains(PropType::DIRECT);
+    let buttonpad_prop = props.contains(PropType::BUTTONPAD);
+    let topbuttonpad_prop = props.contains(PropType::TOPBUTTONPAD);
+    let semi_mt_prop = props.contains(PropType::SEMI_MT);
+    let pointer_prop = props.contains(PropType::POINTER);
 
     let key_hint = device.supported_keys().is_some_and(|keys| {
         keys.contains(Key::BTN_TOOL_FINGER)
@@ -423,7 +422,26 @@ fn is_touchpad(device: &Device) -> bool {
         .map(|name| name.to_ascii_lowercase().contains("touchpad"))
         .unwrap_or(false);
 
-    (pointer_hint && (prop_hint || key_hint)) || name_hint
+    let touchpad = !direct_prop
+        && ((pointer_prop && (buttonpad_prop || topbuttonpad_prop || semi_mt_prop || key_hint))
+            || name_hint);
+
+    let info = format!(
+        "abs_axes=xy direct={} pointer={} buttonpad={} topbuttonpad={} semi_mt={} key_hint={} name_hint={}",
+        direct_prop,
+        pointer_prop,
+        buttonpad_prop,
+        topbuttonpad_prop,
+        semi_mt_prop,
+        key_hint,
+        name_hint
+    );
+
+    if touchpad {
+        (AbsMode::RelativeFromAbs, info)
+    } else {
+        (AbsMode::Absolute, info)
+    }
 }
 
 fn set_non_blocking(fd: i32) {
