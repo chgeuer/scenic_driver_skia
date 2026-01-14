@@ -161,6 +161,23 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     end
   end
 
+  defmodule QuadScene do
+    use Scenic.Scene
+    import Scenic.Primitives
+
+    def init(scene, _args, _opts) do
+      graph =
+        Scenic.Graph.build()
+        |> quad({{0, 0}, {20, 0}, {24, 20}, {0, 20}},
+          fill: :red,
+          stroke: {2, :white},
+          translate: {10, 10}
+        )
+
+      {:ok, Scenic.Scene.push_graph(scene, graph)}
+    end
+  end
+
   test "draw_rect fills expected pixels" do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
 
@@ -465,6 +482,40 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     assert pixel_at(frame, width, 20, 26) != {0, 0, 0}
     # Fill sample inside the sector.
     assert red_pixel?(pixel_at(frame, width, 24, 24))
+  end
+
+  test "draw_quad fills expected pixels" do
+    assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
+
+    vp = ViewPortHelper.start(size: {64, 64}, scene: QuadScene)
+
+    on_exit(fn ->
+      if Process.alive?(vp.pid) do
+        _ = ViewPort.stop(vp)
+      end
+
+      _ = Native.stop()
+    end)
+
+    {width, _height, frame} =
+      wait_for_frame!(40, fn {w, _h, data} ->
+        red_pixel?(pixel_at(data, w, 18, 20))
+      end)
+
+    # Background just outside the translated quad bounds.
+    assert pixel_at(frame, width, 7, 10) == {0, 0, 0}
+    assert pixel_at(frame, width, 10, 7) == {0, 0, 0}
+    assert pixel_at(frame, width, 33, 10) == {0, 0, 0}
+    assert pixel_at(frame, width, 10, 33) == {0, 0, 0}
+    # Background inside the bounding box but outside the quad fill.
+    assert pixel_at(frame, width, 33, 12) == {0, 0, 0}
+    # Stroke samples along the edges.
+    assert pixel_at(frame, width, 14, 10) == {255, 255, 255}
+    assert pixel_at(frame, width, 10, 14) == {255, 255, 255}
+    assert pixel_at(frame, width, 30, 22) != {0, 0, 0}
+    assert pixel_at(frame, width, 22, 30) != {0, 0, 0}
+    # Fill sample inside the quad.
+    assert red_pixel?(pixel_at(frame, width, 18, 20))
   end
 
   defp wait_for_frame!(attempts_remaining, predicate) do
