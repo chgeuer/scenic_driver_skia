@@ -10,12 +10,10 @@ defmodule Scenic.Driver.Skia.DriverOptionsTest do
     assert Keyword.get(opts[:window], :title) == "Scenic Window"
     assert Keyword.get(opts[:window], :resizeable) == false
 
-    assert {:ok, opts} =
-             Skia.validate_opts(backend: :drm, debug: true, raster_output: "out.png")
+    assert {:ok, opts} = Skia.validate_opts(backend: :drm, debug: true)
 
     assert opts[:backend] == "drm"
     assert opts[:debug] == true
-    assert opts[:raster_output] == "out.png"
   end
 
   test "validate_opts rejects invalid backend type" do

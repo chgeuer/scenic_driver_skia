@@ -20,6 +20,7 @@ use backend::UserEvent;
 use cursor::CursorState;
 use input::{InputEvent, InputQueue, notify_input_ready};
 use renderer::{RenderState, ScriptOp};
+use rustler::{Binary, Env, OwnedBinary};
 
 enum StopSignal {
     Wayland(winit::event_loop::EventLoopProxy<UserEvent>),
@@ -33,11 +34,17 @@ struct DriverHandle {
     render_state: Arc<Mutex<RenderState>>,
     input_events: Arc<Mutex<InputQueue>>,
     input_mask: Arc<AtomicU32>,
-    raster_output: Option<Arc<Mutex<Option<String>>>>,
+    raster_frame: Option<Arc<Mutex<Option<RasterFrame>>>>,
     dirty: Option<Arc<AtomicBool>>,
     running: Arc<AtomicBool>,
     cursor_state: Option<Arc<Mutex<CursorState>>>,
     thread: thread::JoinHandle<()>,
+}
+
+pub(crate) struct RasterFrame {
+    width: u32,
+    height: u32,
+    data: Vec<u8>,
 }
 
 static DRIVER: OnceLock<Mutex<Option<DriverHandle>>> = OnceLock::new();
@@ -131,7 +138,7 @@ pub fn start(
             render_state,
             input_events,
             input_mask,
-            raster_output: None,
+            raster_frame: None,
             dirty: Some(dirty),
             running,
             cursor_state: Some(cursor_state),
@@ -144,8 +151,8 @@ pub fn start(
         let dirty_for_thread = Arc::clone(&dirty);
         let stop_for_thread = Arc::clone(&stop);
         let text_for_thread = Arc::clone(&text);
-        let raster_output = Arc::new(Mutex::new(None));
-        let output_for_thread = Arc::clone(&raster_output);
+        let raster_frame = Arc::new(Mutex::new(None));
+        let frame_for_thread = Arc::clone(&raster_frame);
         let input_for_thread = Arc::clone(&input_mask);
         let requested_size = viewport_size;
         let thread = thread::Builder::new()
@@ -155,7 +162,7 @@ pub fn start(
                     stop_for_thread,
                     dirty_for_thread,
                     state_for_thread,
-                    output_for_thread,
+                    frame_for_thread,
                     text_for_thread,
                     input_for_thread,
                     requested_size,
@@ -168,7 +175,7 @@ pub fn start(
             render_state,
             input_events,
             input_mask,
-            raster_output: Some(raster_output),
+            raster_frame: Some(raster_frame),
             dirty: Some(dirty),
             running,
             cursor_state: None,
@@ -212,7 +219,7 @@ pub fn start(
             render_state,
             input_events,
             input_mask,
-            raster_output: None,
+            raster_frame: None,
             dirty: None,
             running,
             cursor_state: None,
@@ -373,28 +380,27 @@ pub fn script_count() -> Result<u64, String> {
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
-pub fn set_raster_output(path: String) -> Result<(), String> {
+pub fn get_raster_frame<'a>(env: Env<'a>) -> Result<(u32, u32, Binary<'a>), String> {
     let state = driver_state()
         .lock()
         .map_err(|_| "driver state lock poisoned".to_string())?;
     let handle = state
         .as_ref()
         .ok_or_else(|| "renderer not running".to_string())?;
-    let output = handle
-        .raster_output
+    let frame_slot = handle
+        .raster_frame
         .as_ref()
         .ok_or_else(|| "raster backend not active".to_string())?;
-
-    let mut slot = output
+    let frame_guard = frame_slot
         .lock()
-        .map_err(|_| "raster output lock poisoned".to_string())?;
-    *slot = Some(path);
-
-    if let Some(dirty) = &handle.dirty {
-        dirty.store(true, Ordering::Relaxed);
-    }
-
-    Ok(())
+        .map_err(|_| "raster frame lock poisoned".to_string())?;
+    let frame = frame_guard
+        .as_ref()
+        .ok_or_else(|| "raster frame not available".to_string())?;
+    let mut binary = OwnedBinary::new(frame.data.len())
+        .ok_or_else(|| "failed to allocate raster frame binary".to_string())?;
+    binary.as_mut_slice().copy_from_slice(&frame.data);
+    Ok((frame.width, frame.height, Binary::from_owned(binary, env)))
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
@@ -1362,7 +1368,7 @@ mod tests {
             render_state: Arc::new(Mutex::new(RenderState::default())),
             input_events: Arc::clone(&input_events),
             input_mask: Arc::new(AtomicU32::new(0)),
-            raster_output: None,
+            raster_frame: None,
             dirty: Some(Arc::new(AtomicBool::new(false))),
             running: Arc::new(AtomicBool::new(false)),
             cursor_state: None,

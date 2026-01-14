@@ -4,7 +4,6 @@ defmodule Scenic.Driver.Skia.InputEventsTest do
   alias Scenic.Driver.Skia.Native
   alias Scenic.Driver.Skia.TestSupport.ViewPort, as: ViewPortHelper
   alias Scenic.ViewPort
-  alias ExImageInfo
 
   test "drains input events while raster backend is running" do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
@@ -36,12 +35,6 @@ defmodule Scenic.Driver.Skia.InputEventsTest do
   test "raster output matches viewport size" do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
 
-    output_path =
-      Path.join(
-        System.tmp_dir!(),
-        "scenic_driver_skia_raster_#{System.unique_integer([:positive])}.png"
-      )
-
     viewport_size = {321, 123}
 
     vp = ViewPortHelper.start(size: viewport_size)
@@ -52,19 +45,11 @@ defmodule Scenic.Driver.Skia.InputEventsTest do
       end
 
       _ = Native.stop()
-      _ = File.rm(output_path)
     end)
 
-    case Native.set_raster_output(output_path) do
-      :ok -> :ok
-      {:ok, _} -> :ok
-      other -> flunk("set_raster_output returned #{inspect(other)}")
-    end
-
-    wait_for_file!(output_path, 40)
-
-    assert {_, width, height, _} = ExImageInfo.info(File.read!(output_path), :png)
+    {width, height, frame} = wait_for_frame!(40)
     assert {width, height} == viewport_size
+    assert byte_size(frame) == width * height * 3
   end
 
   test "cursor visibility toggles are accepted while renderer is running" do
@@ -85,17 +70,17 @@ defmodule Scenic.Driver.Skia.InputEventsTest do
     assert :ok = Scenic.Driver.Skia.show_cursor()
   end
 
-  defp wait_for_file!(path, attempts_remaining) do
-    cond do
-      File.exists?(path) ->
-        :ok
+  defp wait_for_frame!(attempts_remaining) do
+    case Native.get_raster_frame() do
+      {:ok, {width, height, frame}} ->
+        {width, height, frame}
 
-      attempts_remaining > 0 ->
+      _ when attempts_remaining > 0 ->
         Process.sleep(50)
-        wait_for_file!(path, attempts_remaining - 1)
+        wait_for_frame!(attempts_remaining - 1)
 
-      true ->
-        flunk("timed out waiting for raster output at #{path}")
+      other ->
+        flunk("timed out waiting for raster frame: #{inspect(other)}")
     end
   end
 

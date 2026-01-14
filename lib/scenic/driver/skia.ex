@@ -35,7 +35,6 @@ defmodule Scenic.Driver.Skia do
   @opts_schema [
     backend: [type: {:or, [:atom, :string]}, default: :wayland],
     debug: [type: :boolean, default: false],
-    raster_output: [type: :string],
     window: [type: :keyword_list, keys: @window_schema, default: []],
     drm: [type: :keyword_list, keys: @drm_schema, default: []]
   ]
@@ -82,12 +81,10 @@ defmodule Scenic.Driver.Skia do
            drm_input_log
          ) do
       :ok ->
-        maybe_set_raster_output(opts)
         maybe_set_input_target(self())
         {:ok, assign(driver, opts: opts, update_count: 0, input_mask: 0)}
 
       {:ok, _} ->
-        maybe_set_raster_output(opts)
         maybe_set_input_target(self())
         {:ok, assign(driver, opts: opts, update_count: 0, input_mask: 0)}
 
@@ -273,21 +270,6 @@ defmodule Scenic.Driver.Skia do
   @spec set_text(String.t()) :: :ok | {:error, term()}
   def set_text(text) when is_binary(text) do
     Native.set_text(text)
-  end
-
-  defp maybe_set_raster_output(opts) do
-    case opts[:raster_output] do
-      nil ->
-        :ok
-
-      path ->
-        case Native.set_raster_output(path) do
-          :ok -> :ok
-          {:ok, _} -> :ok
-          {:error, reason} -> Logger.warning("set_raster_output failed: #{inspect(reason)}")
-          other -> Logger.warning("set_raster_output returned #{inspect(other)}")
-        end
-    end
   end
 
   defp normalize_backend(backend) do

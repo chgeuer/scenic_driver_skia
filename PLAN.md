@@ -9,7 +9,7 @@ Completed:
 - `draw_script` resolves cached sub-scripts with push/pop draw-state stack.
 - Parser supports `fill_color`, `translate`, `draw_rect`, `draw_text`, line, circle, stroke, and text style ops.
 - Driver submits scripts by id and deletes stale scripts.
-- Raster backend validated with `raster_output`; Wayland/DRM share the same render state.
+- Raster backend validated with raw RGB frame capture; Wayland/DRM share the same render state.
 - Assets module with local fonts + aliases.
 - Script ingestion tests in Rust.
 - Added script ops for `draw_ellipse`, `draw_arc`, `draw_sector`, and `draw_rrectv`.

@@ -34,7 +34,6 @@ Configure the driver on a `ViewPort`:
       name: :skia_driver,
       backend: :wayland,
       debug: false,
-      raster_output: "tmp/output.png",
       window: [title: "Scenic Window", resizeable: false]
     ]
   ]
@@ -52,7 +51,7 @@ The driver can target different rendering backends:
 - `backend: :drm` renders directly on Linux DRM hardware.
   - Configure DRM with `drm: [card: "/dev/dri/card0", hw_cursor: true, input_log: false]`.
 - `backend: :raster` renders to an offscreen surface.
-  - Set `raster_output: "path/to.png"` to write a PNG.
+  - Fetch the latest RGB frame via `Scenic.Driver.Skia.Native.get_raster_frame/0`.
 
 ## Demos
 

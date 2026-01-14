@@ -38,7 +38,7 @@ defmodule Scenic.Driver.Skia.Native do
   def reset_scene, do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
-  def set_raster_output(_path), do: :erlang.nif_error(:nif_not_loaded)
+  def get_raster_frame, do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
   def script_count, do: :erlang.nif_error(:nif_not_loaded)
