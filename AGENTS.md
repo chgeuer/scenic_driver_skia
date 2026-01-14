@@ -5,6 +5,7 @@ This repository contains a Rust project with an Elixir wrapper. Please follow th
 - Run `cargo fmt` before committing changes.
 - Run `cargo check` to ensure the Rust code compiles.
 - Run `cargo clippy -- -D warnings` to lint Rust changes.
+- The Rust `Cargo.toml` lives in `native/scenic_driver_skia`.
 - Run `mix format` and `mix test` to validate Elixir changes.
 - Add or update tests with each incremental step and keep them passing.
 - Document test commands you run in your final summary, noting any failures or external blockers.
