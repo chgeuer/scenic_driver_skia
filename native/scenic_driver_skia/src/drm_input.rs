@@ -6,7 +6,9 @@ use std::sync::{
     atomic::{AtomicU32, Ordering},
 };
 
-use evdev::{AbsoluteAxisType, Device, InputEventKind, Key, PropType, RelativeAxisType};
+use evdev::{
+    AbsoluteAxisType, Device, InputEventKind, Key, PropType, RelativeAxisType, Synchronization,
+};
 use libc::input_absinfo;
 
 use crate::input::{
@@ -96,16 +98,22 @@ impl DrmInput {
                         self.handle_rel_event(axis, event.value(), mask);
                     }
                     InputEventKind::AbsAxis(axis) => {
-                        let action = {
-                            let device = &mut self.devices[idx];
-                            update_abs_action(device, axis, event.value(), self.screen_size)
-                        };
-                        match action {
-                            AbsAction::Absolute(x, y) => self.handle_abs_position(x, y, mask),
-                            AbsAction::Relative(dx, dy) => {
-                                self.handle_abs_relative(dx, dy, mask);
+                        let device = &mut self.devices[idx];
+                        update_abs_state(device, axis, event.value(), self.screen_size);
+                    }
+                    InputEventKind::Synchronization(sync) => {
+                        if sync == Synchronization::SYN_REPORT {
+                            let action = {
+                                let device = &mut self.devices[idx];
+                                consume_abs_action(device, self.screen_size)
+                            };
+                            match action {
+                                AbsAction::Absolute(x, y) => self.handle_abs_position(x, y, mask),
+                                AbsAction::Relative(dx, dy) => {
+                                    self.handle_abs_relative(dx, dy, mask);
+                                }
+                                AbsAction::None => {}
                             }
-                            AbsAction::None => {}
                         }
                     }
                     _ => {}
@@ -313,12 +321,12 @@ enum AbsAction {
     Relative(f32, f32),
 }
 
-fn update_abs_action(
+fn update_abs_state(
     device: &mut InputDevice,
     axis: AbsoluteAxisType,
     value: i32,
     screen_size: (u32, u32),
-) -> AbsAction {
+) {
     let fallback = (
         screen_size.0.saturating_sub(1) as i32,
         screen_size.1.saturating_sub(1) as i32,
@@ -332,9 +340,11 @@ fn update_abs_action(
             device.abs_y = Some(update_axis_state(device.abs_y, value, fallback.1));
             device.abs_y_dirty = true;
         }
-        _ => return AbsAction::None,
+        _ => {}
     }
+}
 
+fn consume_abs_action(device: &mut InputDevice, screen_size: (u32, u32)) -> AbsAction {
     if !(device.abs_x_dirty && device.abs_y_dirty) {
         return AbsAction::None;
     }
@@ -366,7 +376,6 @@ fn update_abs_action(
         AbsAction::Absolute(scaled.0, scaled.1)
     }
 }
-
 fn update_axis_state(current: Option<AbsAxisState>, value: i32, fallback_max: i32) -> AbsAxisState {
     match current {
         Some(mut state) => {
