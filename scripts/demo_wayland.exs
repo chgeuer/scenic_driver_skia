@@ -32,11 +32,11 @@ defmodule ScenicDriverSkia.DemoWayland do
       x2 = 700
       x3 = 1320
       x4 = 1940
-      y1 = 80
-      y2 = 460
-      y3 = 840
-      y4 = 1180
-      label_offset = 160
+      y1 = 60
+      y2 = 320
+      y3 = 580
+      y4 = 800
+      label_offset = 120
 
       path_commands = [
         :begin,
@@ -103,9 +103,9 @@ defmodule ScenicDriverSkia.DemoWayland do
       |> text("scissor", fill: :white, translate: {x1, y4 + label_offset})
       |> line({{0, 0}, {200, 0}},
         stroke: {12, {:linear, {0, 0, 200, 0, :red, :blue}}},
-        translate: {x1, y4 + 140}
+        translate: {x1, y4 + 150}
       )
-      |> text("linear stroke", fill: :white, translate: {x1, y4 + 170})
+      |> text("linear stroke", fill: :white, translate: {x1, y4 + 180})
       |> rect({200, 120},
         fill: {:color_rgba, {255, 0, 0, 128}},
         translate: {x3, y4}
@@ -113,9 +113,9 @@ defmodule ScenicDriverSkia.DemoWayland do
       |> text("alpha 0.5", fill: :white, translate: {x3, y4 + label_offset})
       |> rect({200, 80},
         fill: {:linear, {0, 0, 200, 0, :red, :blue}},
-        translate: {x3, y4 + 140}
+        translate: {x3, y4 + 150}
       )
-      |> text("linear gradient", fill: :white, translate: {x3, y4 + 230})
+      |> text("linear gradient", fill: :white, translate: {x3, y4 + 240})
       |> path(
         [
           :begin,
@@ -183,7 +183,7 @@ defmodule ScenicDriverSkia.DemoWayland do
 
     {:ok, _vp} =
       Scenic.ViewPort.start(
-        size: {2560, 1440},
+        size: {1920, 1080},
         default_scene: DemoScene,
         drivers: [
           [
