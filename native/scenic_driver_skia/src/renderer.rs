@@ -3,8 +3,9 @@ use std::sync::{Mutex, OnceLock};
 
 use skia_safe::{
     AlphaType, ClipOp, Color, ColorType, Data, Font, FontMgr, FontStyle, Image, ImageInfo, Matrix,
-    Paint, PaintCap, PaintJoin, PaintStyle, PathBuilder, Point, RRect, Rect, SamplingOptions,
-    Shader, Surface, TileMode, Typeface, Vector,
+    Paint, PaintCap, PaintJoin, PaintStyle, PathBuilder, PathDirection, Point, RRect, Rect,
+    SamplingOptions, Shader, Surface, TileMode, Typeface, Vector,
+    canvas::SrcRectConstraint,
     gpu::{self, SurfaceOrigin, backend_render_targets, gl::FramebufferInfo},
     images,
 };
@@ -104,6 +105,52 @@ pub enum ScriptOp {
         x: f32,
         y: f32,
     },
+    PathTriangle {
+        x0: f32,
+        y0: f32,
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+    },
+    PathQuad {
+        x0: f32,
+        y0: f32,
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        x3: f32,
+        y3: f32,
+    },
+    PathRect {
+        width: f32,
+        height: f32,
+    },
+    PathRRect {
+        width: f32,
+        height: f32,
+        radius: f32,
+    },
+    PathSector {
+        radius: f32,
+        radians: f32,
+    },
+    PathCircle {
+        radius: f32,
+    },
+    PathEllipse {
+        radius0: f32,
+        radius1: f32,
+    },
+    PathArc {
+        cx: f32,
+        cy: f32,
+        radius: f32,
+        start: f32,
+        end: f32,
+        dir: u32,
+    },
     DrawLine {
         x0: f32,
         y0: f32,
@@ -170,12 +217,29 @@ pub enum ScriptOp {
         ll_radius: f32,
         flag: u16,
     },
+    DrawSprites {
+        image_id: String,
+        cmds: Vec<SpriteCommand>,
+    },
     DrawText(String),
     Font(String),
     FontSize(f32),
     TextAlign(TextAlign),
     TextBase(TextBase),
     DrawScript(String),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SpriteCommand {
+    pub sx: f32,
+    pub sy: f32,
+    pub sw: f32,
+    pub sh: f32,
+    pub dx: f32,
+    pub dy: f32,
+    pub dw: f32,
+    pub dh: f32,
+    pub alpha: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -548,6 +612,90 @@ fn draw_script(
                 let path = draw_state.path.get_or_insert_with(PathBuilder::new);
                 path.quad_to(Point::new(*cpx, *cpy), Point::new(*x, *y));
             }
+            ScriptOp::PathTriangle {
+                x0,
+                y0,
+                x1,
+                y1,
+                x2,
+                y2,
+            } => {
+                let path = draw_state.path.get_or_insert_with(PathBuilder::new);
+                let points = [
+                    Point::new(*x0, *y0),
+                    Point::new(*x1, *y1),
+                    Point::new(*x2, *y2),
+                ];
+                path.add_polygon(&points, true);
+            }
+            ScriptOp::PathQuad {
+                x0,
+                y0,
+                x1,
+                y1,
+                x2,
+                y2,
+                x3,
+                y3,
+            } => {
+                let path = draw_state.path.get_or_insert_with(PathBuilder::new);
+                let points = [
+                    Point::new(*x0, *y0),
+                    Point::new(*x1, *y1),
+                    Point::new(*x2, *y2),
+                    Point::new(*x3, *y3),
+                ];
+                path.add_polygon(&points, true);
+            }
+            ScriptOp::PathRect { width, height } => {
+                let path = draw_state.path.get_or_insert_with(PathBuilder::new);
+                let rect = Rect::from_xywh(0.0, 0.0, *width, *height);
+                path.add_rect(rect, PathDirection::CW, None);
+            }
+            ScriptOp::PathRRect {
+                width,
+                height,
+                radius,
+            } => {
+                let path = draw_state.path.get_or_insert_with(PathBuilder::new);
+                let rect = Rect::from_xywh(0.0, 0.0, *width, *height);
+                let rrect = RRect::new_rect_xy(rect, *radius, *radius);
+                path.add_rrect(rrect, PathDirection::CW, None);
+            }
+            ScriptOp::PathSector { radius, radians } => {
+                let path = draw_state.path.get_or_insert_with(PathBuilder::new);
+                let rect = Rect::from_xywh(-radius, -radius, radius * 2.0, radius * 2.0);
+                let sweep = radians.to_degrees();
+                path.move_to(Point::new(0.0, 0.0));
+                path.line_to(Point::new(*radius, 0.0));
+                path.arc_to(rect, 0.0, sweep, false);
+                path.close();
+            }
+            ScriptOp::PathCircle { radius } => {
+                let path = draw_state.path.get_or_insert_with(PathBuilder::new);
+                path.add_circle(Point::new(0.0, 0.0), *radius, PathDirection::CW);
+            }
+            ScriptOp::PathEllipse { radius0, radius1 } => {
+                let path = draw_state.path.get_or_insert_with(PathBuilder::new);
+                let rect = Rect::from_xywh(-radius0, -radius1, radius0 * 2.0, radius1 * 2.0);
+                path.add_oval(rect, PathDirection::CW, None);
+            }
+            ScriptOp::PathArc {
+                cx,
+                cy,
+                radius,
+                start,
+                end,
+                dir,
+            } => {
+                let path = draw_state.path.get_or_insert_with(PathBuilder::new);
+                let rect = Rect::from_xywh(cx - radius, cy - radius, radius * 2.0, radius * 2.0);
+                let mut sweep = (end - start).to_degrees();
+                if *dir == 2 {
+                    sweep = -sweep;
+                }
+                path.add_arc(rect, start.to_degrees(), sweep);
+            }
             ScriptOp::DrawLine {
                 x0,
                 y0,
@@ -754,6 +902,23 @@ fn draw_script(
                     let mut paint = Paint::default();
                     apply_stroke_paint(&mut paint, draw_state);
                     canvas.draw_rrect(rrect, &paint);
+                }
+            }
+            ScriptOp::DrawSprites { image_id, cmds } => {
+                let Some(image) = cached_static_image(image_id.as_str()) else {
+                    continue;
+                };
+                for cmd in cmds {
+                    let src = Rect::from_xywh(cmd.sx, cmd.sy, cmd.sw, cmd.sh);
+                    let dst = Rect::from_xywh(cmd.dx, cmd.dy, cmd.dw, cmd.dh);
+                    let mut paint = Paint::default();
+                    paint.set_alpha_f(cmd.alpha);
+                    canvas.draw_image_rect(
+                        &image,
+                        Some((&src, SrcRectConstraint::Fast)),
+                        dst,
+                        &paint,
+                    );
                 }
             }
             ScriptOp::DrawText(text) => {

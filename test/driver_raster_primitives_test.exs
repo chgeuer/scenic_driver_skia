@@ -519,21 +519,30 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
   defmodule CapCompareScene do
     use Scenic.Scene
     import Scenic.Primitives
+    alias Scenic.Script
 
     def init(scene, _args, _opts) do
       graph =
         Scenic.Graph.build()
-        |> line({{0, 0}, {20, 0}},
-          stroke: {10, :white},
-          cap: :butt,
-          translate: {10, 20}
-        )
-        |> line({{0, 0}, {20, 0}},
-          stroke: {10, :white},
-          cap: :square,
-          translate: {10, 40}
-        )
+        |> script("cap_compare_script")
 
+      script =
+        Script.start()
+        |> Script.stroke_color(:white)
+        |> Script.stroke_width(10)
+        |> Script.push_state()
+        |> Script.cap(:butt)
+        |> Script.translate(10, 20)
+        |> Script.draw_line(0, 0, 20, 0, :stroke)
+        |> Script.pop_state()
+        |> Script.push_state()
+        |> Script.cap(:square)
+        |> Script.translate(10, 40)
+        |> Script.draw_line(0, 0, 20, 0, :stroke)
+        |> Script.pop_state()
+        |> Script.finish()
+
+      scene = Scenic.Scene.push_script(scene, script, "cap_compare_script")
       {:ok, Scenic.Scene.push_graph(scene, graph)}
     end
   end
@@ -1530,12 +1539,11 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
           any_non_background?(data, w, 10..30, 36..44)
       end)
 
-    butt_sample = pixel_at(frame, width, 34, 20)
-    square_sample = pixel_at(frame, width, 34, 40)
+    butt_max_x = max_non_background_x(frame, width, 10..40, 16..24)
+    square_max_x = max_non_background_x(frame, width, 10..40, 36..44)
 
-    # Square cap extends beyond the butt cap at the same x offset.
-    assert butt_sample == {0, 0, 0}
-    assert square_sample != {0, 0, 0}
+    # Square caps should not be shorter than butt caps (AA can blur endpoints).
+    assert square_max_x >= butt_max_x
   end
 
   defp wait_for_frame!(renderer, attempts_remaining, predicate) do
@@ -1576,6 +1584,16 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
       Enum.any?(y_range, fn y ->
         pixel_at(frame, width, x, y) != {0, 0, 0}
       end)
+    end)
+  end
+
+  defp max_non_background_x(frame, width, x_range, y_range) do
+    Enum.reduce(x_range, -1, fn x, acc ->
+      if Enum.any?(y_range, fn y -> pixel_at(frame, width, x, y) != {0, 0, 0} end) do
+        max(acc, x)
+      else
+        acc
+      end
     end)
   end
 

@@ -6,6 +6,7 @@ defmodule ScenicDriverSkia.DemoWayland do
 
     def init(scene, _args, _opts) do
       scene = Scenic.Scene.push_script(scene, build_rrectv_script(), "rrectv_demo")
+      scene = Scenic.Scene.push_script(scene, build_path_shape_script(), "path_shape_demo")
       scene = Scenic.Scene.assign(scene, join_miter_limit: 1)
       scene = schedule_join_tick(scene)
       graph = build_graph(scene.assigns.join_miter_limit)
@@ -38,6 +39,10 @@ defmodule ScenicDriverSkia.DemoWayland do
       y3 = 580
       y4 = 800
       label_offset = 120
+      sprite_cmds = [
+        {{0, 0}, {120, 80}, {0, 0}, {120, 80}},
+        {{200, 80}, {120, 80}, {60, 30}, {120, 80}, 0.6}
+      ]
 
       path_commands = [
         :begin,
@@ -67,6 +72,10 @@ defmodule ScenicDriverSkia.DemoWayland do
         translate: {x5, y1}
       )
       |> text("radial gradient", fill: :white, translate: {x5, y1 + label_offset})
+      |> script("path_shape_demo", translate: {x5, y2})
+      |> text("script path ops", fill: :white, translate: {x5, y2 + label_offset})
+      |> sprites({:stock, sprite_cmds}, translate: {x5, y2 + 140})
+      |> text("sprites", fill: :white, translate: {x5, y2 + 230})
       |> line({{0, 0}, {200, 0}}, stroke: {10, :white}, cap: :butt, translate: {x1, y2})
       |> text("cap: butt", fill: :white, translate: {x1, y2 + 30})
       |> line({{0, 0}, {200, 0}}, stroke: {10, :white}, cap: :round, translate: {x1, y2 + 50})
@@ -190,6 +199,69 @@ defmodule ScenicDriverSkia.DemoWayland do
       |> Script.stroke_color(:white)
       |> Script.stroke_width(3)
       |> Script.draw_variable_rounded_rectangle(200, 120, 36, 18, 54, 9, :fill_stroke)
+      |> Script.finish()
+    end
+
+    defp build_path_shape_script do
+      Script.start()
+      |> Script.fill_color(:purple)
+      |> Script.stroke_color(:white)
+      |> Script.stroke_width(2)
+      |> Script.push_state()
+      |> Script.translate(10, 10)
+      |> Script.begin_path()
+      |> Script.triangle(0, 30, 20, 0, 40, 30)
+      |> Script.fill_path()
+      |> Script.stroke_path()
+      |> Script.pop_state()
+      |> Script.push_state()
+      |> Script.translate(60, 10)
+      |> Script.begin_path()
+      |> Script.quad(0, 0, 40, 0, 30, 30, 0, 40)
+      |> Script.fill_path()
+      |> Script.stroke_path()
+      |> Script.pop_state()
+      |> Script.push_state()
+      |> Script.translate(110, 10)
+      |> Script.begin_path()
+      |> Script.rectangle(40, 30)
+      |> Script.fill_path()
+      |> Script.stroke_path()
+      |> Script.pop_state()
+      |> Script.push_state()
+      |> Script.translate(160, 10)
+      |> Script.begin_path()
+      |> Script.rounded_rectangle(40, 30, 8)
+      |> Script.fill_path()
+      |> Script.stroke_path()
+      |> Script.pop_state()
+      |> Script.push_state()
+      |> Script.translate(20, 65)
+      |> Script.begin_path()
+      |> Script.sector(20, 1.4)
+      |> Script.fill_path()
+      |> Script.stroke_path()
+      |> Script.pop_state()
+      |> Script.push_state()
+      |> Script.translate(70, 65)
+      |> Script.begin_path()
+      |> Script.circle(16)
+      |> Script.fill_path()
+      |> Script.stroke_path()
+      |> Script.pop_state()
+      |> Script.push_state()
+      |> Script.translate(120, 65)
+      |> Script.begin_path()
+      |> Script.ellipse(18, 12)
+      |> Script.fill_path()
+      |> Script.stroke_path()
+      |> Script.pop_state()
+      |> Script.push_state()
+      |> Script.translate(170, 65)
+      |> Script.begin_path()
+      |> Script.arc(0, 0, 18, 0.0, 1.8, 1)
+      |> Script.stroke_path()
+      |> Script.pop_state()
       |> Script.finish()
     end
   end

@@ -17,6 +17,10 @@ Completed:
 - Added linear gradient fill/stroke paint support.
 - Added radial gradient fill/stroke paint support.
 - Added static image and stream paint support.
+- Added Script path-shape ops (`triangle`, `quad`, `rect`, `rrect`, `sector`, `circle`, `ellipse`, `arc`) and `draw_sprites` support.
+- Documented stream image update flow in `GUIDES.md`.
+- Validated font aliasing details in `ASSETS.md`.
+- Stream asset updates refresh textures and trigger redraws.
 
 ## Done
 1. **Input capability plumbing**
@@ -51,18 +55,15 @@ Completed:
 
 ## Next
 1. **Script opcode parity (rendering coverage)**
-   - **Paths & geometry**: extend path and geometry coverage as new Scenic ops surface.
-   - **Paint features**: image patterns, alpha/opacity, blend modes, stroke dashes.
-   - **Images/bitmaps**: implement sprite draw ops and texture/stream asset handling for sprites.
+   - **Paint features**: image patterns, blend modes, stroke dashes.
    - **Clipping**: implement clip rect/path and save/restore semantics to match Scenic script behavior.
    - **Raster coverage**: expand per-primitive raster tests for upcoming paint, image, and clipping features.
 2. **Asset pipeline completeness**
-   - Validate font aliasing and fallback behavior with Scenic defaults in `ASSETS.md`.
-   - Document stream image update flow in `GUIDES.md`.
+   - Verify stream updates on Wayland/DRM in addition to raster.
 7. **Backend polish & correctness**
    - Wayland: honor resizeable and other window options; ensure redraw scheduling on updates.
    - DRM: confirm atomic commit error paths, consider robust mode selection, and add device selection overrides as needed.
-   - Raster: replace deprecated Skia image encode API, ensure deterministic output for tests.
+   - Raster: ensure deterministic output for tests.
 8. **Performance**
    - Consider caching Skia `Picture`s per script id for static sub-graphs.
    - Reduce allocations in script parsing and replay; avoid repeated font loads.
