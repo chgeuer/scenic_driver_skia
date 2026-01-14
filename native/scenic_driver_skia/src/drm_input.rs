@@ -6,7 +6,7 @@ use std::sync::{
     atomic::{AtomicU32, Ordering},
 };
 
-use evdev::{AbsoluteAxisType, Device, InputEventKind, Key, RelativeAxisType};
+use evdev::{AbsoluteAxisType, Device, InputEventKind, Key, PropType, RelativeAxisType};
 use libc::input_absinfo;
 
 use crate::input::{
@@ -399,14 +399,31 @@ fn detect_abs_mode(device: &Device) -> AbsMode {
 }
 
 fn is_touchpad(device: &Device) -> bool {
-    let Some(keys) = device.supported_keys() else {
+    let props = device.properties();
+    if props.contains(PropType::DIRECT) {
         return false;
-    };
-    keys.contains(Key::BTN_TOOL_FINGER)
-        || keys.contains(Key::BTN_TOOL_DOUBLETAP)
-        || keys.contains(Key::BTN_TOOL_TRIPLETAP)
-        || keys.contains(Key::BTN_TOOL_QUADTAP)
-        || keys.contains(Key::BTN_TOOL_QUINTTAP)
+    }
+
+    let prop_hint = props.contains(PropType::BUTTONPAD)
+        || props.contains(PropType::TOPBUTTONPAD)
+        || props.contains(PropType::SEMI_MT);
+    let pointer_hint = props.contains(PropType::POINTER);
+
+    let key_hint = device.supported_keys().is_some_and(|keys| {
+        keys.contains(Key::BTN_TOOL_FINGER)
+            || keys.contains(Key::BTN_TOUCH)
+            || keys.contains(Key::BTN_TOOL_DOUBLETAP)
+            || keys.contains(Key::BTN_TOOL_TRIPLETAP)
+            || keys.contains(Key::BTN_TOOL_QUADTAP)
+            || keys.contains(Key::BTN_TOOL_QUINTTAP)
+    });
+
+    let name_hint = device
+        .name()
+        .map(|name| name.to_ascii_lowercase().contains("touchpad"))
+        .unwrap_or(false);
+
+    (pointer_hint && (prop_hint || key_hint)) || name_hint
 }
 
 fn set_non_blocking(fd: i32) {
