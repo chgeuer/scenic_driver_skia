@@ -25,6 +25,8 @@ struct InputDevice {
     abs_y: Option<AbsAxisState>,
     abs_mode: AbsMode,
     last_abs_scaled: Option<(f32, f32)>,
+    touch_active: bool,
+    touch_tracking: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -86,7 +88,7 @@ impl DrmInput {
             for event in events {
                 match event.kind() {
                     InputEventKind::Key(key) => {
-                        self.handle_key_event(key, event.value(), mask);
+                        self.handle_key_event_with_device(idx, key, event.value(), mask);
                     }
                     InputEventKind::RelAxis(axis) => {
                         self.handle_rel_event(axis, event.value(), mask);
@@ -286,6 +288,8 @@ fn enumerate_devices() -> Vec<InputDevice> {
             abs_y,
             abs_mode,
             last_abs_scaled: None,
+            touch_active: false,
+            touch_tracking: false,
         });
     }
 
@@ -336,6 +340,10 @@ fn update_abs_action(
     );
 
     if device.abs_mode == AbsMode::RelativeFromAbs {
+        if device.touch_tracking && !device.touch_active {
+            device.last_abs_scaled = Some(scaled);
+            return AbsAction::None;
+        }
         let (dx, dy) = match device.last_abs_scaled {
             Some((last_x, last_y)) => (scaled.0 - last_x, scaled.1 - last_y),
             None => (0.0, 0.0),
@@ -442,6 +450,36 @@ fn detect_abs_mode(device: &Device) -> (AbsMode, String) {
     } else {
         (AbsMode::Absolute, info)
     }
+}
+
+impl DrmInput {
+    fn handle_key_event_with_device(&mut self, idx: usize, key: Key, value: i32, mask: u32) {
+        let pressed = value != 0;
+        if let Some(device) = self.devices.get_mut(idx)
+            && device.abs_mode == AbsMode::RelativeFromAbs
+            && is_touch_tracking_key(key)
+        {
+            device.touch_tracking = true;
+            device.touch_active = pressed;
+            if pressed {
+                device.last_abs_scaled = None;
+            }
+        }
+
+        self.handle_key_event(key, value, mask);
+    }
+}
+
+fn is_touch_tracking_key(key: Key) -> bool {
+    matches!(
+        key,
+        Key::BTN_TOUCH
+            | Key::BTN_TOOL_FINGER
+            | Key::BTN_TOOL_DOUBLETAP
+            | Key::BTN_TOOL_TRIPLETAP
+            | Key::BTN_TOOL_QUADTAP
+            | Key::BTN_TOOL_QUINTTAP
+    )
 }
 
 fn set_non_blocking(fd: i32) {
@@ -816,6 +854,8 @@ mod tests {
             abs_y,
             abs_mode: AbsMode::Absolute,
             last_abs_scaled: None,
+            touch_active: false,
+            touch_tracking: false,
         };
 
         let input_mask = Arc::new(AtomicU32::new(
