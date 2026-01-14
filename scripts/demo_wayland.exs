@@ -12,31 +12,31 @@ defmodule ScenicDriverSkia.DemoWayland do
 
     defp build_graph do
       x1 = 80
-      x2 = 880
-      x3 = 1680
+      x2 = 700
+      x3 = 1320
       y1 = 80
-      y2 = 520
-      y3 = 960
-      label_offset = 190
+      y2 = 460
+      y3 = 840
+      label_offset = 160
 
-      Scenic.Graph.build(font_size: 22)
-      |> rect({220, 140}, fill: :blue, stroke: {3, :white}, translate: {x1, y1})
+      Scenic.Graph.build(font_size: 20)
+      |> rect({200, 120}, fill: :blue, stroke: {3, :white}, translate: {x1, y1})
       |> text("rect", fill: :white, translate: {x1, y1 + label_offset})
-      |> rounded_rectangle({220, 140, 24}, fill: :purple, stroke: {3, :white}, translate: {x2, y1})
+      |> rounded_rectangle({200, 120, 20}, fill: :purple, stroke: {3, :white}, translate: {x2, y1})
       |> text("rrect", fill: :white, translate: {x2, y1 + label_offset})
       |> script("rrectv_demo", translate: {x3, y1})
       |> text("rrectv", fill: :white, translate: {x3, y1 + label_offset})
-      |> line({{0, 0}, {220, 140}}, stroke: {4, :white}, translate: {x1, y2})
+      |> line({{0, 0}, {200, 120}}, stroke: {4, :white}, translate: {x1, y2})
       |> text("line", fill: :white, translate: {x1, y2 + label_offset})
-      |> circle(60, fill: :green, stroke: {3, :white}, translate: {x2 + 110, y2 + 70})
+      |> circle(55, fill: :green, stroke: {3, :white}, translate: {x2 + 100, y2 + 60})
       |> text("circle", fill: :white, translate: {x2, y2 + label_offset})
-      |> ellipse({80, 50}, fill: :orange, stroke: {3, :white}, translate: {x3 + 110, y2 + 70})
+      |> ellipse({70, 45}, fill: :orange, stroke: {3, :white}, translate: {x3 + 100, y2 + 60})
       |> text("ellipse", fill: :white, translate: {x3, y2 + label_offset})
-      |> arc({80, 1.6}, stroke: {6, :white}, translate: {x1 + 110, y3 + 70})
+      |> arc({70, 1.6}, stroke: {6, :white}, translate: {x1 + 100, y3 + 60})
       |> text("arc", fill: :white, translate: {x1, y3 + label_offset})
-      |> sector({80, 1.2}, fill: :teal, stroke: {3, :white}, translate: {x2 + 110, y3 + 70})
+      |> sector({70, 1.2}, fill: :teal, stroke: {3, :white}, translate: {x2 + 100, y3 + 60})
       |> text("sector", fill: :white, translate: {x2, y3 + label_offset})
-      |> text("text", fill: :yellow, font_size: 34, translate: {x3, y3 + 80})
+      |> text("text", fill: :yellow, font_size: 30, translate: {x3, y3 + 70})
       |> text("text", fill: :white, translate: {x3, y3 + label_offset})
     end
 
@@ -45,7 +45,7 @@ defmodule ScenicDriverSkia.DemoWayland do
       |> Script.fill_color(:navy)
       |> Script.stroke_color(:white)
       |> Script.stroke_width(3)
-      |> Script.draw_variable_rounded_rectangle(220, 140, 40, 20, 60, 10, :fill_stroke)
+      |> Script.draw_variable_rounded_rectangle(200, 120, 36, 18, 54, 9, :fill_stroke)
       |> Script.finish()
     end
   end

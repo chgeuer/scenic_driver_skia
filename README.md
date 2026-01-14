@@ -54,6 +54,11 @@ The driver can target different rendering backends:
 - `backend: :raster` renders to an offscreen surface.
   - Set `raster_output: "path/to.png"` to write a PNG.
 
+## Demos
+
+- `mix run scripts/demo_wayland.exs` renders each supported primitive in a Wayland window.
+- `mix run scripts/demo_drm.exs` renders and shows input events on DRM.
+
 ## Prerequisites
 
 - Elixir 1.15+ and a Rust toolchain (for Rustler).
