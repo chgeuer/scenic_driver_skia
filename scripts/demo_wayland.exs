@@ -39,7 +39,7 @@ defmodule ScenicDriverSkia.DemoWayland do
         translate: {x4, y2}
       )
       |> text("triangle", fill: :white, translate: {x4, y2 + label_offset})
-      |> quad({{0, 0}, {200, 0}, {200, 120}, {0, 120}},
+      |> quad({{0, 0}, {215, 0}, {185, 120}, {0, 140}},
         fill: :olive,
         stroke: {3, :white},
         translate: {x4, y1}
@@ -76,7 +76,7 @@ defmodule ScenicDriverSkia.DemoWayland do
             name: :skia_driver,
             backend: :wayland,
             debug: false,
-            window: [resizeable: true, title: "Scenic Wayland"]
+            window: [resizeable: false, title: "Scenic Wayland"]
           ]
         ]
       )
