@@ -29,9 +29,9 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     def init(scene, _args, _opts) do
       graph =
         Scenic.Graph.build()
-        |> rounded_rectangle({20, 20, 4},
+        |> rounded_rectangle({20, 20, 8},
           fill: :red,
-          stroke: {4, :white},
+          stroke: {2, :white},
           translate: {10, 10}
         )
 
@@ -90,7 +90,7 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     {width, _height, frame} =
       wait_for_frame!(40, fn {w, _h, data} ->
         pixel_at(data, w, 20, 20) == {255, 0, 0} and
-          pixel_at(data, w, 15, 11) == {255, 255, 255}
+          pixel_at(data, w, 20, 10) == {255, 255, 255}
       end)
 
     # Background just outside the translated rrect bounds.
@@ -98,11 +98,16 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     assert pixel_at(frame, width, 10, 7) == {0, 0, 0}
     assert pixel_at(frame, width, 33, 10) == {0, 0, 0}
     assert pixel_at(frame, width, 10, 33) == {0, 0, 0}
+    # Rounded corners leave background at the outer corner pixels.
+    assert pixel_at(frame, width, 10, 10) == {0, 0, 0}
+    assert pixel_at(frame, width, 30, 10) == {0, 0, 0}
+    assert pixel_at(frame, width, 10, 30) == {0, 0, 0}
+    assert pixel_at(frame, width, 30, 30) == {0, 0, 0}
     # Stroke samples on each edge (away from rounded corners).
-    assert pixel_at(frame, width, 15, 11) == {255, 255, 255}
-    assert pixel_at(frame, width, 11, 15) == {255, 255, 255}
-    assert pixel_at(frame, width, 29, 15) == {255, 255, 255}
-    assert pixel_at(frame, width, 15, 29) == {255, 255, 255}
+    assert pixel_at(frame, width, 20, 10) == {255, 255, 255}
+    assert pixel_at(frame, width, 10, 20) == {255, 255, 255}
+    assert pixel_at(frame, width, 30, 20) == {255, 255, 255}
+    assert pixel_at(frame, width, 20, 30) == {255, 255, 255}
     # Fill sample inside the rrect.
     assert pixel_at(frame, width, 20, 20) == {255, 0, 0}
   end
