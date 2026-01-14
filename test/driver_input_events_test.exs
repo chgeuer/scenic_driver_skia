@@ -5,6 +5,19 @@ defmodule Scenic.Driver.Skia.InputEventsTest do
   alias Scenic.Driver.Skia.TestSupport.ViewPort, as: ViewPortHelper
   alias Scenic.ViewPort
 
+  defmodule RasterScene do
+    use Scenic.Scene
+    import Scenic.Primitives
+
+    def init(scene, _args, _opts) do
+      graph =
+        Scenic.Graph.build()
+        |> rect({140, 80}, fill: :red, translate: {20, 20})
+
+      {:ok, Scenic.Scene.push_graph(scene, graph)}
+    end
+  end
+
   test "drains input events while raster backend is running" do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
     ensure_renderer_stopped()
@@ -52,6 +65,27 @@ defmodule Scenic.Driver.Skia.InputEventsTest do
     assert byte_size(frame) == width * height * 3
   end
 
+  test "raster output contains drawn content" do
+    assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
+
+    vp = ViewPortHelper.start(size: {200, 120}, scene: RasterScene)
+
+    on_exit(fn ->
+      if Process.alive?(vp.pid) do
+        _ = ViewPort.stop(vp)
+      end
+
+      _ = Native.stop()
+    end)
+
+    {_width, _height, frame} =
+      wait_for_frame!(40, fn {_w, _h, data} ->
+        Enum.any?(:binary.bin_to_list(data), &(&1 > 0))
+      end)
+
+    assert Enum.any?(:binary.bin_to_list(frame), &(&1 > 0))
+  end
+
   test "cursor visibility toggles are accepted while renderer is running" do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
     ensure_renderer_stopped()
@@ -70,18 +104,30 @@ defmodule Scenic.Driver.Skia.InputEventsTest do
     assert :ok = Scenic.Driver.Skia.show_cursor()
   end
 
-  defp wait_for_frame!(attempts_remaining) do
-    case Native.get_raster_frame() do
-      {:ok, {width, height, frame}} ->
-        {width, height, frame}
+  defp wait_for_frame!(attempts_remaining),
+    do: wait_for_frame!(attempts_remaining, fn _ -> true end)
 
-      _ when attempts_remaining > 0 ->
-        Process.sleep(50)
-        wait_for_frame!(attempts_remaining - 1)
+  defp wait_for_frame!(attempts_remaining, predicate) do
+    case Native.get_raster_frame() do
+      {:ok, {width, height, frame}} = ok ->
+        if predicate.({width, height, frame}) do
+          {width, height, frame}
+        else
+          retry_frame(ok, attempts_remaining, predicate)
+        end
 
       other ->
-        flunk("timed out waiting for raster frame: #{inspect(other)}")
+        retry_frame(other, attempts_remaining, predicate)
     end
+  end
+
+  defp retry_frame(_last_result, attempts_remaining, predicate) when attempts_remaining > 0 do
+    Process.sleep(50)
+    wait_for_frame!(attempts_remaining - 1, predicate)
+  end
+
+  defp retry_frame(last_result, _attempts_remaining, _predicate) do
+    flunk("timed out waiting for raster frame: #{inspect(last_result)}")
   end
 
   defp ensure_renderer_stopped do
