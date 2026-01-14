@@ -68,9 +68,26 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     def init(scene, _args, _opts) do
       graph =
         Scenic.Graph.build()
-        |> line({{0, 0}, {30, 0}},
+        |> line({{0, 10}, {30, 10}},
           stroke: {2, :white},
-          translate: {10, 30}
+          translate: {10, 40}
+        )
+
+      {:ok, Scenic.Scene.push_graph(scene, graph)}
+    end
+  end
+
+  defmodule CircleScene do
+    use Scenic.Scene
+    import Scenic.Primitives
+
+    def init(scene, _args, _opts) do
+      graph =
+        Scenic.Graph.build()
+        |> circle(8,
+          fill: :red,
+          stroke: {1, :white},
+          translate: {20, 20}
         )
 
       {:ok, Scenic.Scene.push_graph(scene, graph)}
@@ -200,17 +217,51 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
 
     {width, _height, frame} =
       wait_for_frame!(40, fn {w, _h, data} ->
-        pixel_at(data, w, 25, 30) != {0, 0, 0}
+        pixel_at(data, w, 25, 50) != {0, 0, 0} and
+          pixel_at(data, w, 25, 35) == {0, 0, 0}
       end)
 
     # Background above and below the horizontal line.
-    assert pixel_at(frame, width, 25, 27) == {0, 0, 0}
-    assert pixel_at(frame, width, 25, 33) == {0, 0, 0}
+    assert pixel_at(frame, width, 25, 35) == {0, 0, 0}
+    assert pixel_at(frame, width, 25, 65) == {0, 0, 0}
     # Stroke samples along the line.
-    assert pixel_at(frame, width, 15, 30) != {0, 0, 0}
-    assert pixel_at(frame, width, 25, 30) != {0, 0, 0}
-    assert pixel_at(frame, width, 35, 30) != {0, 0, 0}
-    assert pixel_at(frame, width, 38, 30) != {0, 0, 0}
+    assert pixel_at(frame, width, 15, 50) != {0, 0, 0}
+    assert pixel_at(frame, width, 25, 50) != {0, 0, 0}
+    assert pixel_at(frame, width, 35, 50) != {0, 0, 0}
+    assert pixel_at(frame, width, 38, 50) != {0, 0, 0}
+  end
+
+  test "draw_circle fills expected pixels" do
+    assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
+
+    vp = ViewPortHelper.start(size: {64, 64}, scene: CircleScene)
+
+    on_exit(fn ->
+      if Process.alive?(vp.pid) do
+        _ = ViewPort.stop(vp)
+      end
+
+      _ = Native.stop()
+    end)
+
+    {width, _height, frame} =
+      wait_for_frame!(40, fn {w, _h, data} ->
+        pixel_at(data, w, 20, 20) == {255, 0, 0} and
+          pixel_at(data, w, 28, 20) != {0, 0, 0}
+      end)
+
+    # Background just outside the translated circle bounds.
+    assert pixel_at(frame, width, 10, 20) == {0, 0, 0}
+    assert pixel_at(frame, width, 30, 20) == {0, 0, 0}
+    assert pixel_at(frame, width, 20, 10) == {0, 0, 0}
+    assert pixel_at(frame, width, 20, 30) == {0, 0, 0}
+    # Stroke samples on each side of the circle.
+    assert pixel_at(frame, width, 28, 20) != {0, 0, 0}
+    assert pixel_at(frame, width, 20, 28) != {0, 0, 0}
+    assert pixel_at(frame, width, 12, 20) != {0, 0, 0}
+    assert pixel_at(frame, width, 20, 12) != {0, 0, 0}
+    # Fill sample at the center.
+    assert pixel_at(frame, width, 20, 20) == {255, 0, 0}
   end
 
   defp wait_for_frame!(attempts_remaining, predicate) do
