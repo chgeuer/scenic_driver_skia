@@ -66,6 +66,23 @@ defmodule Scenic.Driver.Skia.InputEventsTest do
     assert {width, height} == viewport_size
   end
 
+  test "cursor visibility toggles are accepted while renderer is running" do
+    assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
+
+    case Native.start("raster", nil, "Scenic Window", false) do
+      :ok -> :ok
+      {:ok, _} -> :ok
+      other -> flunk("start returned #{inspect(other)}")
+    end
+
+    on_exit(fn ->
+      _ = Native.stop()
+    end)
+
+    assert :ok = Scenic.Driver.Skia.hide_cursor()
+    assert :ok = Scenic.Driver.Skia.show_cursor()
+  end
+
   defp wait_for_file!(path, attempts_remaining) do
     cond do
       File.exists?(path) ->

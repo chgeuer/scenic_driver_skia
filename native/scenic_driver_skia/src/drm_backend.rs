@@ -798,7 +798,7 @@ pub fn run(
             return;
         }
     };
-    let cursor_plane = match create_cursor_plane(&card, &gbm_device, &resources, crtc_handle) {
+    let mut cursor_plane = match create_cursor_plane(&card, &gbm_device, &resources, crtc_handle) {
         Ok(plane) => plane,
         Err(e) => {
             eprintln!("DRM cursor setup failed: {e}");
@@ -928,10 +928,13 @@ pub fn run(
 
     let mut current_bo = Some(bo);
     let mut last_cursor = cursor;
-    if let Some(plane) = cursor_plane.as_ref()
-        && let Err(e) = update_cursor_plane(&card, crtc_handle, plane, cursor, dimensions)
-    {
-        eprintln!("DRM cursor update failed: {e}");
+    let cursor_plane_error = cursor_plane
+        .as_ref()
+        .and_then(|plane| update_cursor_plane(&card, crtc_handle, plane, cursor, dimensions).err());
+    if let Some(err) = cursor_plane_error {
+        eprintln!("DRM cursor update failed: {err}");
+        cursor_plane = None;
+        dirty.store(true, Ordering::Relaxed);
     }
 
     loop {
@@ -940,11 +943,16 @@ pub fn run(
         }
         input.poll();
         cursor = cursor_snapshot(&config.cursor_state);
-        if let Some(plane) = cursor_plane.as_ref() {
-            if (cursor.visible != last_cursor.visible || cursor.pos != last_cursor.pos)
-                && let Err(e) = update_cursor_plane(&card, crtc_handle, plane, cursor, dimensions)
-            {
-                eprintln!("DRM cursor update failed: {e}");
+        if cursor_plane.is_some() {
+            if cursor.visible != last_cursor.visible || cursor.pos != last_cursor.pos {
+                let cursor_plane_error = cursor_plane.as_ref().and_then(|plane| {
+                    update_cursor_plane(&card, crtc_handle, plane, cursor, dimensions).err()
+                });
+                if let Some(err) = cursor_plane_error {
+                    eprintln!("DRM cursor update failed: {err}");
+                    cursor_plane = None;
+                    dirty.store(true, Ordering::Relaxed);
+                }
             }
         } else {
             if cursor.visible && cursor.pos != last_cursor.pos {
