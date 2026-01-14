@@ -81,7 +81,7 @@ defmodule ScenicDriverSkia.Stress do
 
   def run do
     {backend, device} = parse_args(System.argv())
-    maybe_set_drm_card(device)
+    driver_opts = maybe_set_drm_card(device)
     Logger.configure(level: :info)
     {:ok, _} = DynamicSupervisor.start_link(name: :scenic_viewports, strategy: :one_for_one)
 
@@ -90,7 +90,7 @@ defmodule ScenicDriverSkia.Stress do
         size: {2560, 1440},
         default_scene: StressScene,
         drivers: [
-          [module: ScenicDriverSkia.Driver, name: :skia_driver, backend: backend]
+          [module: ScenicDriverSkia.Driver, name: :skia_driver, backend: backend] ++ driver_opts
         ]
       )
 
@@ -117,8 +117,8 @@ defmodule ScenicDriverSkia.Stress do
     {backend, Keyword.get(opts, :device)}
   end
 
-  defp maybe_set_drm_card(nil), do: :ok
-  defp maybe_set_drm_card(path), do: System.put_env("SCENIC_DRM_CARD", path)
+  defp maybe_set_drm_card(nil), do: []
+  defp maybe_set_drm_card(path), do: [drm: [card: path]]
 end
 
 ScenicDriverSkia.Stress.run()

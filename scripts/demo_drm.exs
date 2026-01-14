@@ -189,26 +189,32 @@ defmodule ScenicDriverSkia.DemoDrm do
   end
 
   def run do
-    maybe_set_drm_card(System.argv())
+    drm_card = parse_drm_card(System.argv())
     {:ok, _} = DynamicSupervisor.start_link(name: :scenic_viewports, strategy: :one_for_one)
+
+    driver_opts =
+      case drm_card do
+        nil -> []
+        path -> [drm: [card: path]]
+      end
 
     {:ok, _vp} =
       Scenic.ViewPort.start(
         size: {400, 300},
         default_scene: DemoScene,
         drivers: [
-          [module: Scenic.Driver.Skia, name: :skia_driver, backend: :drm]
+          [module: Scenic.Driver.Skia, name: :skia_driver, backend: :drm] ++ driver_opts
         ]
       )
 
     Process.sleep(:infinity)
   end
 
-  defp maybe_set_drm_card(args) do
+  defp parse_drm_card(args) do
     case args do
-      ["--device", path] -> System.put_env("SCENIC_DRM_CARD", path)
-      ["--device=" <> path] -> System.put_env("SCENIC_DRM_CARD", path)
-      _ -> :ok
+      ["--device", path] -> path
+      ["--device=" <> path] -> path
+      _ -> nil
     end
   end
 end

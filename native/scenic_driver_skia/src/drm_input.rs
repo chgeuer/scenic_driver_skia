@@ -64,8 +64,9 @@ impl DrmInput {
         input_mask: Arc<AtomicU32>,
         input_events: Arc<Mutex<InputQueue>>,
         cursor_state: Arc<Mutex<CursorState>>,
+        log_enabled: bool,
     ) -> Self {
-        let devices = enumerate_devices();
+        let devices = enumerate_devices(log_enabled);
         Self {
             devices,
             cursor_pos: (0.0, 0.0),
@@ -274,15 +275,12 @@ impl DrmInput {
     }
 }
 
-fn enumerate_devices() -> Vec<InputDevice> {
+fn enumerate_devices(log_enabled: bool) -> Vec<InputDevice> {
     let mut devices = Vec::new();
     let entries = match fs::read_dir("/dev/input") {
         Ok(entries) => entries,
         Err(_) => return devices,
     };
-    let log_enabled = std::env::var("SCENIC_DRM_INPUT_LOG")
-        .map(|v| v == "1")
-        .unwrap_or(false);
 
     for entry in entries.flatten() {
         let path = entry.path();

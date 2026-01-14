@@ -10,7 +10,7 @@ defmodule Scenic.Driver.Skia.InputEventsTest do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
     ensure_renderer_stopped()
 
-    case Native.start("raster", nil, "Scenic Window", false) do
+    case Native.start("raster", nil, "Scenic Window", false, nil, true, false) do
       :ok -> :ok
       {:ok, _} -> :ok
       other -> flunk("start returned #{inspect(other)}")
@@ -71,7 +71,7 @@ defmodule Scenic.Driver.Skia.InputEventsTest do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
     ensure_renderer_stopped()
 
-    case Native.start("raster", nil, "Scenic Window", false) do
+    case Native.start("raster", nil, "Scenic Window", false, nil, true, false) do
       :ok -> :ok
       {:ok, _} -> :ok
       other -> flunk("start returned #{inspect(other)}")

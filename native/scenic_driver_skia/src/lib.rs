@@ -53,6 +53,9 @@ pub fn start(
     viewport_size: Option<(u32, u32)>,
     window_title: String,
     window_resizeable: bool,
+    drm_card: Option<String>,
+    drm_hw_cursor: bool,
+    drm_input_log: bool,
 ) -> Result<(), String> {
     let backend = backend
         .map(|b| b.to_lowercase())
@@ -101,6 +104,7 @@ pub fn start(
         let requested_size = viewport_size;
         let cursor_state = Arc::new(Mutex::new(CursorState::new()));
         let cursor_for_thread = Arc::clone(&cursor_state);
+        let drm_card = drm_card.clone();
         let thread = thread::Builder::new()
             .name(thread_name)
             .spawn(move || {
@@ -114,6 +118,9 @@ pub fn start(
                     drm_backend::DrmRunConfig {
                         requested_size,
                         cursor_state: cursor_for_thread,
+                        card_path: drm_card,
+                        hw_cursor: drm_hw_cursor,
+                        input_log: drm_input_log,
                     },
                 )
             })

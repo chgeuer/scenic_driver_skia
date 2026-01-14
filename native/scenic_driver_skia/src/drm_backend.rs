@@ -64,14 +64,13 @@ struct CursorPlane {
     size: (u32, u32),
 }
 
-fn open_card() -> Result<Card, String> {
-    let card_path =
-        std::env::var("SCENIC_DRM_CARD").unwrap_or_else(|_| String::from("/dev/dri/card0"));
+fn open_card(card_path: Option<&str>) -> Result<Card, String> {
+    let card_path = card_path.unwrap_or("/dev/dri/card0");
 
     let fd = OpenOptions::new()
         .read(true)
         .write(true)
-        .open(&card_path)
+        .open(card_path)
         .map_err(|e| format!("failed to open {card_path}: {e}"))?;
 
     Ok(Card(fd))
@@ -690,6 +689,9 @@ fn draw_software_cursor(renderer: &mut Renderer, cursor_pos: (f32, f32), screen_
 pub struct DrmRunConfig {
     pub requested_size: Option<(u32, u32)>,
     pub cursor_state: Arc<Mutex<CursorState>>,
+    pub card_path: Option<String>,
+    pub hw_cursor: bool,
+    pub input_log: bool,
 }
 
 pub fn run(
@@ -701,7 +703,7 @@ pub fn run(
     input_events: Arc<Mutex<InputQueue>>,
     config: DrmRunConfig,
 ) {
-    let card = match open_card() {
+    let card = match open_card(config.card_path.as_deref()) {
         Ok(card) => card,
         Err(e) => {
             eprintln!("DRM backend unavailable: {e}");
@@ -793,6 +795,7 @@ pub fn run(
         Arc::clone(&input_mask),
         input_events,
         Arc::clone(&config.cursor_state),
+        config.input_log,
     );
 
     let gbm_device = match GbmDevice::new(card.as_fd()) {
@@ -802,10 +805,7 @@ pub fn run(
             return;
         }
     };
-    let enable_hw_cursor = std::env::var("SCENIC_DRM_HW_CURSOR")
-        .map(|value| value != "0")
-        .unwrap_or(false);
-    let mut cursor_plane = if enable_hw_cursor {
+    let mut cursor_plane = if config.hw_cursor {
         match create_cursor_plane(&card, &gbm_device, &resources, crtc_handle) {
             Ok(plane) => plane,
             Err(e) => {

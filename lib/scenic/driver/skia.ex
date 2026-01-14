@@ -26,11 +26,18 @@ defmodule Scenic.Driver.Skia do
     resizeable: [type: :boolean, default: false]
   ]
 
+  @drm_schema [
+    card: [type: :string],
+    hw_cursor: [type: :boolean, default: true],
+    input_log: [type: :boolean, default: false]
+  ]
+
   @opts_schema [
     backend: [type: {:or, [:atom, :string]}, default: :wayland],
     debug: [type: :boolean, default: false],
     raster_output: [type: :string],
-    window: [type: :keyword_list, keys: @window_schema, default: []]
+    window: [type: :keyword_list, keys: @window_schema, default: []],
+    drm: [type: :keyword_list, keys: @drm_schema, default: []]
   ]
 
   @input_mask_key 0x01
@@ -60,8 +67,20 @@ defmodule Scenic.Driver.Skia do
     window_opts = Keyword.get(opts, :window, [])
     window_title = Keyword.get(window_opts, :title, "Scenic Window")
     window_resizeable = Keyword.get(window_opts, :resizeable, false)
+    drm_opts = Keyword.get(opts, :drm, [])
+    drm_card = Keyword.get(drm_opts, :card)
+    drm_hw_cursor = Keyword.get(drm_opts, :hw_cursor, true)
+    drm_input_log = Keyword.get(drm_opts, :input_log, false)
 
-    case Native.start(opts[:backend], viewport_size, window_title, window_resizeable) do
+    case Native.start(
+           opts[:backend],
+           viewport_size,
+           window_title,
+           window_resizeable,
+           drm_card,
+           drm_hw_cursor,
+           drm_input_log
+         ) do
       :ok ->
         maybe_set_raster_output(opts)
         maybe_set_input_target(self())
@@ -218,7 +237,7 @@ defmodule Scenic.Driver.Skia do
   def start(backend) when is_atom(backend) or is_binary(backend) do
     backend
     |> normalize_backend()
-    |> Native.start(nil, "Scenic Window", false)
+    |> Native.start(nil, "Scenic Window", false, nil, true, false)
     |> normalize_start_result()
   end
 
