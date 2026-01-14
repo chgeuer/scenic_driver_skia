@@ -18,6 +18,19 @@ defmodule Scenic.Driver.Skia.InputEventsTest do
     end
   end
 
+  defmodule PixelScene do
+    use Scenic.Scene
+    import Scenic.Primitives
+
+    def init(scene, _args, _opts) do
+      graph =
+        Scenic.Graph.build()
+        |> rect({20, 20}, fill: :red, translate: {0, 0})
+
+      {:ok, Scenic.Scene.push_graph(scene, graph)}
+    end
+  end
+
   test "drains input events while raster backend is running" do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
     ensure_renderer_stopped()
@@ -86,6 +99,28 @@ defmodule Scenic.Driver.Skia.InputEventsTest do
     assert Enum.any?(:binary.bin_to_list(frame), &(&1 > 0))
   end
 
+  test "raster output returns expected pixel colors" do
+    assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
+
+    vp = ViewPortHelper.start(size: {64, 64}, scene: PixelScene)
+
+    on_exit(fn ->
+      if Process.alive?(vp.pid) do
+        _ = ViewPort.stop(vp)
+      end
+
+      _ = Native.stop()
+    end)
+
+    {width, _height, frame} =
+      wait_for_frame!(40, fn {w, _h, data} ->
+        pixel_at(data, w, 5, 5) == {255, 0, 0}
+      end)
+
+    assert pixel_at(frame, width, 5, 5) == {255, 0, 0}
+    assert pixel_at(frame, width, 30, 30) == {0, 0, 0}
+  end
+
   test "cursor visibility toggles are accepted while renderer is running" do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
     ensure_renderer_stopped()
@@ -128,6 +163,15 @@ defmodule Scenic.Driver.Skia.InputEventsTest do
 
   defp retry_frame(last_result, _attempts_remaining, _predicate) do
     flunk("timed out waiting for raster frame: #{inspect(last_result)}")
+  end
+
+  defp pixel_at(frame, width, x, y) do
+    offset = (y * width + x) * 3
+
+    case frame do
+      <<_::binary-size(offset), r, g, b, _::binary>> -> {r, g, b}
+      _ -> {0, 0, 0}
+    end
   end
 
   defp ensure_renderer_stopped do
