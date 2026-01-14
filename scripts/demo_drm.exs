@@ -17,6 +17,8 @@ defmodule ScenicDriverSkia.DemoDrm do
 
       Process.send_after(self(), :change_color, 3_000)
 
+      graph = build_graph()
+
       scene =
         scene
         |> Scenic.Scene.assign(:rect_fill, :blue)
@@ -26,41 +28,65 @@ defmodule ScenicDriverSkia.DemoDrm do
         |> Scenic.Scene.assign(:key_text, "key: none")
         |> Scenic.Scene.assign(:cursor_visible, true)
         |> Scenic.Scene.assign(:cursor_toggle_text, "cursor_visible: true (press 'c' to toggle)")
+        |> Scenic.Scene.assign(:graph, graph)
+        |> Scenic.Scene.push_graph(graph)
 
-      scene = Scenic.Scene.push_graph(scene, build_graph(scene))
       {:ok, scene}
     end
 
-    def handle_input({:cursor_pos, {x, y}}, _context, scene) do
+    def handle_input({:cursor_pos, {x, y}}, _context, %{assigns: assigns} = scene) do
+      graph =
+        assigns.graph
+        |> Scenic.Graph.modify(:cursor_dot, &Scenic.Primitives.circle(&1, 3, translate: {x, y}))
+        |> Scenic.Graph.modify(
+          :cursor_pos_text,
+          &Scenic.Primitives.text(&1, format_cursor_pos(x, y))
+        )
+
       scene =
         scene
         |> Scenic.Scene.assign(:cursor_pos_text, format_cursor_pos(x, y))
         |> Scenic.Scene.assign(:cursor_pos, {x, y})
+        |> Scenic.Scene.assign(:graph, graph)
+        |> Scenic.Scene.push_graph(graph)
 
-      scene = Scenic.Scene.push_graph(scene, build_graph(scene))
       {:noreply, scene}
     end
 
     def handle_input({:cursor_button, {button, action, _mods, {x, y}}}, _context, scene) do
+      text = format_cursor_button(button, action, x, y)
+
+      graph =
+        scene.assigns.graph
+        |> Scenic.Graph.modify(:cursor_button_text, &Scenic.Primitives.text(&1, text))
+
       scene =
         scene
-        |> Scenic.Scene.assign(:cursor_button_text, format_cursor_button(button, action, x, y))
+        |> Scenic.Scene.assign(:cursor_button_text, text)
+        |> Scenic.Scene.assign(:graph, graph)
+        |> Scenic.Scene.push_graph(graph)
 
-      scene = Scenic.Scene.push_graph(scene, build_graph(scene))
       {:noreply, scene}
     end
 
     def handle_input({:key, {key, action, _mods}}, _context, scene) do
+      text = format_key(key, action)
+
+      graph =
+        scene.assigns.graph
+        |> Scenic.Graph.modify(:key_text, &Scenic.Primitives.text(&1, text))
+
       scene =
         scene
-        |> Scenic.Scene.assign(:key_text, format_key(key, action))
+        |> Scenic.Scene.assign(:key_text, text)
+        |> Scenic.Scene.assign(:graph, graph)
+        |> Scenic.Scene.push_graph(graph)
 
-      scene = Scenic.Scene.push_graph(scene, build_graph(scene))
       {:noreply, scene}
     end
 
     def handle_input({:codepoint, {codepoint, _mods}}, _context, scene) do
-      scene =
+      {scene, graph} =
         if codepoint in ["c", "C"] do
           visible = !scene.assigns.cursor_visible
           _ =
@@ -70,19 +96,34 @@ defmodule ScenicDriverSkia.DemoDrm do
               Scenic.Driver.Skia.hide_cursor()
             end
 
-          scene
-          |> Scenic.Scene.assign(:cursor_visible, visible)
-          |> Scenic.Scene.assign(
-            :cursor_toggle_text,
-            "cursor_visible: #{visible} (press 'c' to toggle)"
-          )
+          toggle_text = "cursor_visible: #{visible} (press 'c' to toggle)"
+
+          graph =
+            scene.assigns.graph
+            |> Scenic.Graph.modify(:cursor_toggle_text, &Scenic.Primitives.text(&1, toggle_text))
+
+          scene =
+            scene
+            |> Scenic.Scene.assign(:cursor_visible, visible)
+            |> Scenic.Scene.assign(:cursor_toggle_text, toggle_text)
+
+          {scene, graph}
         else
-          scene
+          {scene, scene.assigns.graph}
         end
 
-      scene = Scenic.Scene.assign(scene, :key_text, "codepoint: #{codepoint}")
+      key_text = "codepoint: #{codepoint}"
 
-      scene = Scenic.Scene.push_graph(scene, build_graph(scene))
+      graph =
+        graph
+        |> Scenic.Graph.modify(:key_text, &Scenic.Primitives.text(&1, key_text))
+
+      scene =
+        scene
+        |> Scenic.Scene.assign(:key_text, key_text)
+        |> Scenic.Scene.assign(:graph, graph)
+        |> Scenic.Scene.push_graph(graph)
+
       {:noreply, scene}
     end
 
@@ -97,23 +138,32 @@ defmodule ScenicDriverSkia.DemoDrm do
           _ -> :blue
         end
 
+      graph =
+        scene.assigns.graph
+        |> Scenic.Graph.modify(:color_rect, &Scenic.Primitives.rect(&1, {200, 120}, fill: rect_fill))
+
       scene =
         scene
         |> Scenic.Scene.assign(:rect_fill, rect_fill)
-        |> Scenic.Scene.push_graph(build_graph(scene))
+        |> Scenic.Scene.assign(:graph, graph)
+        |> Scenic.Scene.push_graph(graph)
 
       {:noreply, scene}
     end
 
-    defp build_graph(scene) do
+    defp build_graph do
       Scenic.Graph.build()
-      |> rect({200, 120}, fill: scene.assigns.rect_fill, translate: {50, 50})
-      |> circle(3, fill: :white, translate: scene.assigns.cursor_pos)
+      |> rect({200, 120}, id: :color_rect, fill: :blue, translate: {50, 50})
+      |> circle(3, id: :cursor_dot, fill: :white, translate: {0, 0})
       |> text("Skia DRM", fill: :yellow, translate: {60, 90})
-      |> text(scene.assigns.cursor_pos_text, fill: :white, translate: {60, 140})
-      |> text(scene.assigns.cursor_button_text, fill: :white, translate: {60, 165})
-      |> text(scene.assigns.key_text, fill: :white, translate: {60, 190})
-      |> text(scene.assigns.cursor_toggle_text, fill: :white, translate: {60, 215})
+      |> text("cursor_pos: none", id: :cursor_pos_text, fill: :white, translate: {60, 140})
+      |> text("cursor_button: none", id: :cursor_button_text, fill: :white, translate: {60, 165})
+      |> text("key: none", id: :key_text, fill: :white, translate: {60, 190})
+      |> text("cursor_visible: true (press 'c' to toggle)",
+        id: :cursor_toggle_text,
+        fill: :white,
+        translate: {60, 215}
+      )
       |> analog_clock(radius: 50, seconds: true, translate: {800, 160}, theme: :light)
       |> digital_clock(
         format: :hours_12,
