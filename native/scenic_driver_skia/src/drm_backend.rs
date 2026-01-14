@@ -56,6 +56,14 @@ struct EglState {
     surface: EGLSurface,
 }
 
+struct CursorPlane {
+    handle: plane::Handle,
+    props: HashMap<String, property::Info>,
+    fb: framebuffer::Handle,
+    _bo: BufferObject<()>,
+    size: (u32, u32),
+}
+
 fn open_card() -> Result<Card, String> {
     let card_path =
         std::env::var("SCENIC_DRM_CARD").unwrap_or_else(|_| String::from("/dev/dri/card0"));
@@ -149,6 +157,26 @@ fn is_primary_plane(card: &Card, plane: plane::Handle) -> Result<bool, String> {
     Ok(false)
 }
 
+fn is_cursor_plane(card: &Card, plane: plane::Handle) -> Result<bool, String> {
+    let props = card
+        .get_properties(plane)
+        .map_err(|e| format!("failed to get plane properties: {e}"))?;
+    for (&id, &val) in props.iter() {
+        let info = card
+            .get_property(id)
+            .map_err(|e| format!("failed to read property info: {e}"))?;
+        if info
+            .name()
+            .to_str()
+            .map(|name| name == "type")
+            .unwrap_or(false)
+        {
+            return Ok(val == (PlaneType::Cursor as u32).into());
+        }
+    }
+    Ok(false)
+}
+
 fn find_primary_plane(
     card: &Card,
     resources: &ResourceHandles,
@@ -181,6 +209,32 @@ fn find_primary_plane(
         .ok_or_else(|| "no compatible planes found".to_string())
 }
 
+fn find_cursor_plane(
+    card: &Card,
+    resources: &ResourceHandles,
+    crtc_handle: crtc::Handle,
+) -> Result<Option<plane::Handle>, String> {
+    let planes = card
+        .plane_handles()
+        .map_err(|e| format!("could not list planes: {e}"))?;
+    let mut compatible = Vec::new();
+
+    for plane in planes {
+        let info = card
+            .get_plane(plane)
+            .map_err(|e| format!("failed to read plane info: {e}"))?;
+        let compatible_crtcs = resources.filter_crtcs(info.possible_crtcs());
+        if !compatible_crtcs.contains(&crtc_handle) {
+            continue;
+        }
+        if is_cursor_plane(card, plane)? {
+            compatible.push(plane);
+        }
+    }
+
+    Ok(compatible.first().copied())
+}
+
 fn prop_handle(
     props: &HashMap<String, property::Info>,
     name: &str,
@@ -189,6 +243,163 @@ fn prop_handle(
         .get(name)
         .map(|info| info.handle())
         .ok_or_else(|| format!("missing property {name}"))
+}
+
+fn draw_cursor_bitmap(size: u32) -> Vec<u8> {
+    let mut data = vec![0u8; (size * size * 4) as usize];
+
+    for y in 0..size {
+        for x in 0..size {
+            let mut a = 0;
+            let mut r = 0;
+            let mut g = 0;
+            let mut b = 0;
+            let white = (x < 2 && y < 18) || (y < 2 && x < 18) || (x == y && x < 18);
+            let outline = (x == 2 && y < 18) || (y == 2 && x < 18) || ((x == y) && x < 18 && x > 0);
+            if white {
+                a = 255;
+                r = 255;
+                g = 255;
+                b = 255;
+            }
+            if outline {
+                a = 255;
+                r = 0;
+                g = 0;
+                b = 0;
+            }
+
+            let idx = ((y * size + x) * 4) as usize;
+            data[idx] = b;
+            data[idx + 1] = g;
+            data[idx + 2] = r;
+            data[idx + 3] = a;
+        }
+    }
+
+    data
+}
+
+fn create_cursor_plane<T: AsFd>(
+    card: &Card,
+    gbm_device: &GbmDevice<T>,
+    resources: &ResourceHandles,
+    crtc_handle: crtc::Handle,
+) -> Result<Option<CursorPlane>, String> {
+    let Some(handle) = find_cursor_plane(card, resources, crtc_handle)? else {
+        return Ok(None);
+    };
+    let props = card
+        .get_properties(handle)
+        .and_then(|props| props.as_hashmap(card))
+        .map_err(|e| format!("failed to read cursor plane properties: {e}"))?;
+
+    let size = (64, 64);
+    let mut bo = gbm_device
+        .create_buffer_object(
+            size.0,
+            size.1,
+            GbmFormat::Argb8888,
+            BufferObjectFlags::CURSOR | BufferObjectFlags::WRITE | BufferObjectFlags::LINEAR,
+        )
+        .map_err(|e| format!("failed to create cursor bo: {e}"))?;
+
+    let data = draw_cursor_bitmap(size.0);
+    bo.write(&data)
+        .map_err(|e| format!("failed to write cursor bo: {e}"))?;
+
+    let fb = card
+        .add_framebuffer(&bo, 32, 32)
+        .map_err(|e| format!("failed to create cursor fb: {e}"))?;
+
+    Ok(Some(CursorPlane {
+        handle,
+        props,
+        fb,
+        _bo: bo,
+        size,
+    }))
+}
+
+fn update_cursor_plane(
+    card: &Card,
+    crtc_handle: crtc::Handle,
+    plane: &CursorPlane,
+    cursor: CursorState,
+    screen_size: (u32, u32),
+) -> Result<(), String> {
+    let mut req = atomic::AtomicModeReq::new();
+    if cursor.visible {
+        let (screen_w, screen_h) = screen_size;
+        let max_x = screen_w.saturating_sub(plane.size.0) as f32;
+        let max_y = screen_h.saturating_sub(plane.size.1) as f32;
+        let x = cursor.pos.0.clamp(0.0, max_x).round() as i64;
+        let y = cursor.pos.1.clamp(0.0, max_y).round() as i64;
+        req.add_property(
+            plane.handle,
+            prop_handle(&plane.props, "FB_ID")?,
+            property::Value::Framebuffer(Some(plane.fb)),
+        );
+        req.add_property(
+            plane.handle,
+            prop_handle(&plane.props, "CRTC_ID")?,
+            property::Value::CRTC(Some(crtc_handle)),
+        );
+        req.add_property(
+            plane.handle,
+            prop_handle(&plane.props, "CRTC_X")?,
+            property::Value::SignedRange(x),
+        );
+        req.add_property(
+            plane.handle,
+            prop_handle(&plane.props, "CRTC_Y")?,
+            property::Value::SignedRange(y),
+        );
+        req.add_property(
+            plane.handle,
+            prop_handle(&plane.props, "CRTC_W")?,
+            property::Value::UnsignedRange(plane.size.0 as u64),
+        );
+        req.add_property(
+            plane.handle,
+            prop_handle(&plane.props, "CRTC_H")?,
+            property::Value::UnsignedRange(plane.size.1 as u64),
+        );
+        req.add_property(
+            plane.handle,
+            prop_handle(&plane.props, "SRC_X")?,
+            property::Value::UnsignedRange(0),
+        );
+        req.add_property(
+            plane.handle,
+            prop_handle(&plane.props, "SRC_Y")?,
+            property::Value::UnsignedRange(0),
+        );
+        req.add_property(
+            plane.handle,
+            prop_handle(&plane.props, "SRC_W")?,
+            property::Value::UnsignedRange((plane.size.0 as u64) << 16),
+        );
+        req.add_property(
+            plane.handle,
+            prop_handle(&plane.props, "SRC_H")?,
+            property::Value::UnsignedRange((plane.size.1 as u64) << 16),
+        );
+    } else {
+        req.add_property(
+            plane.handle,
+            prop_handle(&plane.props, "FB_ID")?,
+            property::Value::Framebuffer(None),
+        );
+        req.add_property(
+            plane.handle,
+            prop_handle(&plane.props, "CRTC_ID")?,
+            property::Value::CRTC(None),
+        );
+    }
+
+    card.atomic_commit(AtomicCommitFlags::NONBLOCK, req)
+        .map_err(|e| format!("cursor plane commit failed: {e}"))
 }
 
 fn add_plane_properties(
@@ -587,6 +798,13 @@ pub fn run(
             return;
         }
     };
+    let cursor_plane = match create_cursor_plane(&card, &gbm_device, &resources, crtc_handle) {
+        Ok(plane) => plane,
+        Err(e) => {
+            eprintln!("DRM cursor setup failed: {e}");
+            None
+        }
+    };
 
     let gbm_surface: Surface<()> = match gbm_device.create_surface(
         dimensions.0,
@@ -653,7 +871,7 @@ pub fn run(
         renderer.redraw(&state);
     }
     let mut cursor = cursor_snapshot(&config.cursor_state);
-    if cursor.visible {
+    if cursor_plane.is_none() && cursor.visible {
         draw_software_cursor(&mut renderer, cursor.pos, dimensions);
     }
 
@@ -710,6 +928,11 @@ pub fn run(
 
     let mut current_bo = Some(bo);
     let mut last_cursor = cursor;
+    if let Some(plane) = cursor_plane.as_ref()
+        && let Err(e) = update_cursor_plane(&card, crtc_handle, plane, cursor, dimensions)
+    {
+        eprintln!("DRM cursor update failed: {e}");
+    }
 
     loop {
         if stop.load(Ordering::Relaxed) {
@@ -717,11 +940,19 @@ pub fn run(
         }
         input.poll();
         cursor = cursor_snapshot(&config.cursor_state);
-        if cursor.visible && cursor.pos != last_cursor.pos {
-            dirty.store(true, Ordering::Relaxed);
-        }
-        if cursor.visible != last_cursor.visible {
-            dirty.store(true, Ordering::Relaxed);
+        if let Some(plane) = cursor_plane.as_ref() {
+            if (cursor.visible != last_cursor.visible || cursor.pos != last_cursor.pos)
+                && let Err(e) = update_cursor_plane(&card, crtc_handle, plane, cursor, dimensions)
+            {
+                eprintln!("DRM cursor update failed: {e}");
+            }
+        } else {
+            if cursor.visible && cursor.pos != last_cursor.pos {
+                dirty.store(true, Ordering::Relaxed);
+            }
+            if cursor.visible != last_cursor.visible {
+                dirty.store(true, Ordering::Relaxed);
+            }
         }
         last_cursor = cursor;
         if dirty.swap(false, Ordering::Relaxed) {
@@ -730,7 +961,7 @@ pub fn run(
             if let Ok(state) = render_state.lock() {
                 renderer.redraw(&state);
             }
-            if cursor.visible {
+            if cursor_plane.is_none() && cursor.visible {
                 draw_software_cursor(&mut renderer, cursor.pos, dimensions);
             }
 
