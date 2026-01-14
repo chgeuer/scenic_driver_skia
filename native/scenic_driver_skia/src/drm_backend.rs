@@ -8,7 +8,7 @@ use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, AtomicU32, Ordering},
 };
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use drm::ClientCapability;
 use drm::Device as BasicDevice;
@@ -720,84 +720,6 @@ pub fn run(
         return;
     }
 
-    let resources = match card.resource_handles() {
-        Ok(handles) => handles,
-        Err(e) => {
-            eprintln!("DRM backend unavailable: {e}");
-            return;
-        }
-    };
-
-    let (connector, mode, crtc_handle) =
-        match first_connected_connector(&card, &resources, config.requested_size) {
-            Ok(values) => values,
-            Err(e) => {
-                eprintln!("DRM backend unavailable: {e}");
-                return;
-            }
-        };
-
-    let plane = match find_primary_plane(&card, &resources, crtc_handle) {
-        Ok(handle) => handle,
-        Err(e) => {
-            eprintln!("DRM backend unavailable: {e}");
-            return;
-        }
-    };
-
-    let con_props = match card
-        .get_properties(connector)
-        .and_then(|props| props.as_hashmap(&card))
-    {
-        Ok(props) => props,
-        Err(e) => {
-            eprintln!("DRM backend unavailable: {e}");
-            return;
-        }
-    };
-    let crtc_props = match card
-        .get_properties(crtc_handle)
-        .and_then(|props| props.as_hashmap(&card))
-    {
-        Ok(props) => props,
-        Err(e) => {
-            eprintln!("DRM backend unavailable: {e}");
-            return;
-        }
-    };
-    let plane_props = match card
-        .get_properties(plane)
-        .and_then(|props| props.as_hashmap(&card))
-    {
-        Ok(props) => props,
-        Err(e) => {
-            eprintln!("DRM backend unavailable: {e}");
-            return;
-        }
-    };
-
-    let (width, height) = mode.size();
-    let dimensions = (width as u32, height as u32);
-    if let Some(requested) = config.requested_size
-        && requested != dimensions
-        && let Ok(mut queue) = input_events.lock()
-    {
-        let notify = queue.push_event(InputEvent::ViewportReshape {
-            width: dimensions.0,
-            height: dimensions.1,
-        });
-        if let Some(pid) = notify {
-            notify_input_ready(pid);
-        }
-    }
-    let mut input = DrmInput::new(
-        dimensions,
-        Arc::clone(&input_mask),
-        input_events,
-        Arc::clone(&config.cursor_state),
-        config.input_log,
-    );
-
     let gbm_device = match GbmDevice::new(card.as_fd()) {
         Ok(device) => device,
         Err(e) => {
@@ -805,245 +727,377 @@ pub fn run(
             return;
         }
     };
-    let mut cursor_plane = if config.hw_cursor {
-        match create_cursor_plane(&card, &gbm_device, &resources, crtc_handle) {
-            Ok(plane) => plane,
-            Err(e) => {
-                eprintln!("DRM cursor setup failed: {e}");
-                None
-            }
-        }
-    } else {
-        None
-    };
 
-    let gbm_surface: Surface<()> = match gbm_device.create_surface(
-        dimensions.0,
-        dimensions.1,
-        GbmFormat::Xrgb8888,
-        BufferObjectFlags::SCANOUT | BufferObjectFlags::RENDERING,
-    ) {
-        Ok(surface) => surface,
-        Err(e) => {
-            eprintln!("DRM backend unavailable: {e}");
-            return;
-        }
-    };
-
-    let (egl_lib, egl_api) = match load_egl() {
-        Ok(values) => values,
-        Err(e) => {
-            eprintln!("DRM backend unavailable: {e}");
-            return;
-        }
-    };
-
-    let (display, context, surface) = match init_egl(
-        &egl_api,
-        gbm_device.as_raw() as *mut c_void,
-        gbm_surface.as_raw() as *mut c_void,
-    ) {
-        Ok(values) => values,
-        Err(e) => {
-            eprintln!("DRM backend unavailable: {e}");
-            return;
-        }
-    };
-
-    let egl_state = EglState {
-        egl: egl_api,
-        _egl_lib: egl_lib,
-        display,
-        _context: context,
-        surface,
-    };
-
-    let mut renderer = match create_renderer(&egl_state.egl, dimensions, String::new()) {
-        Ok(renderer) => renderer,
-        Err(e) => {
-            eprintln!("DRM backend unavailable: {e}");
-            return;
-        }
-    };
-
-    let mode_blob = match card.create_property_blob(&mode) {
-        Ok(blob) => blob,
-        Err(e) => {
-            eprintln!("DRM backend unavailable: {e}");
-            return;
-        }
-    };
-
-    let mut framebuffer_cache: HashMap<u32, framebuffer::Handle> = HashMap::new();
-
-    let initial_text = text.lock().unwrap_or_else(|e| e.into_inner()).clone();
-    renderer.set_text(initial_text);
-    if let Ok(state) = render_state.lock() {
-        renderer.redraw(&state);
-    }
-    let mut cursor = cursor_snapshot(&config.cursor_state);
-    if cursor_plane.is_none() && cursor.visible {
-        draw_software_cursor(&mut renderer, cursor.pos, dimensions);
-    }
-
-    if unsafe {
-        egl_state
-            .egl
-            .SwapBuffers(egl_state.display, egl_state.surface)
-    } == egl::FALSE
-    {
-        eprintln!("DRM backend unavailable: eglSwapBuffers failed");
-        return;
-    }
-
-    let bo = match unsafe { gbm_surface.lock_front_buffer() } {
-        Ok(bo) => bo,
-        Err(e) => {
-            eprintln!("DRM backend unavailable: {e}");
-            return;
-        }
-    };
-
-    let fb = match framebuffer_for_bo(&card, &mut framebuffer_cache, &bo) {
-        Ok(fb) => fb,
-        Err(e) => {
-            eprintln!("DRM backend unavailable: {e}");
-            return;
-        }
-    };
-
-    let mut atomic_req = atomic::AtomicModeReq::new();
-    if let Err(e) = (|| -> Result<(), String> {
-        atomic_req.add_property(
-            connector,
-            prop_handle(&con_props, "CRTC_ID")?,
-            property::Value::CRTC(Some(crtc_handle)),
-        );
-        atomic_req.add_property(crtc_handle, prop_handle(&crtc_props, "MODE_ID")?, mode_blob);
-        atomic_req.add_property(
-            crtc_handle,
-            prop_handle(&crtc_props, "ACTIVE")?,
-            property::Value::Boolean(true),
-        );
-        add_plane_properties(&mut atomic_req, plane, &plane_props, crtc_handle, fb)?;
-        add_plane_geometry(&mut atomic_req, plane, &plane_props, &mode)
-    })() {
-        eprintln!("DRM backend unavailable: {e}");
-        return;
-    }
-
-    if let Err(e) = card.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, atomic_req) {
-        eprintln!("DRM backend unavailable: {e}");
-        return;
-    }
-
-    let mut current_bo = Some(bo);
-    let mut last_cursor = cursor;
-    let cursor_plane_error = cursor_plane
-        .as_ref()
-        .and_then(|plane| update_cursor_plane(&card, crtc_handle, plane, cursor, dimensions).err());
-    if let Some(err) = cursor_plane_error
-        && !is_ebusy(&err)
-    {
-        eprintln!("DRM cursor update failed: {err}");
-        cursor_plane = None;
-        dirty.store(true, Ordering::Relaxed);
-    }
+    let mut last_dimensions: Option<(u32, u32)> = None;
+    let hotplug_interval = Duration::from_millis(750);
 
     loop {
         if stop.load(Ordering::Relaxed) {
             break;
         }
-        input.poll();
-        cursor = cursor_snapshot(&config.cursor_state);
-        if cursor_plane.is_some() {
-            if cursor.visible != last_cursor.visible || cursor.pos != last_cursor.pos {
-                let cursor_plane_error = cursor_plane.as_ref().and_then(|plane| {
-                    update_cursor_plane(&card, crtc_handle, plane, cursor, dimensions).err()
-                });
-                if let Some(err) = cursor_plane_error
-                    && !is_ebusy(&err)
-                {
-                    eprintln!("DRM cursor update failed: {err}");
-                    cursor_plane = None;
-                    dirty.store(true, Ordering::Relaxed);
+
+        let resources = match card.resource_handles() {
+            Ok(handles) => handles,
+            Err(e) => {
+                eprintln!("DRM backend unavailable: {e}");
+                std::thread::sleep(Duration::from_millis(250));
+                continue;
+            }
+        };
+
+        let (connector, mode, crtc_handle) =
+            match first_connected_connector(&card, &resources, config.requested_size) {
+                Ok(values) => values,
+                Err(e) => {
+                    eprintln!("DRM backend unavailable: {e}");
+                    std::thread::sleep(Duration::from_millis(250));
+                    continue;
+                }
+            };
+
+        let plane = match find_primary_plane(&card, &resources, crtc_handle) {
+            Ok(handle) => handle,
+            Err(e) => {
+                eprintln!("DRM backend unavailable: {e}");
+                std::thread::sleep(Duration::from_millis(250));
+                continue;
+            }
+        };
+
+        let con_props = match card
+            .get_properties(connector)
+            .and_then(|props| props.as_hashmap(&card))
+        {
+            Ok(props) => props,
+            Err(e) => {
+                eprintln!("DRM backend unavailable: {e}");
+                std::thread::sleep(Duration::from_millis(250));
+                continue;
+            }
+        };
+        let crtc_props = match card
+            .get_properties(crtc_handle)
+            .and_then(|props| props.as_hashmap(&card))
+        {
+            Ok(props) => props,
+            Err(e) => {
+                eprintln!("DRM backend unavailable: {e}");
+                std::thread::sleep(Duration::from_millis(250));
+                continue;
+            }
+        };
+        let plane_props = match card
+            .get_properties(plane)
+            .and_then(|props| props.as_hashmap(&card))
+        {
+            Ok(props) => props,
+            Err(e) => {
+                eprintln!("DRM backend unavailable: {e}");
+                std::thread::sleep(Duration::from_millis(250));
+                continue;
+            }
+        };
+
+        let (width, height) = mode.size();
+        let dimensions = (width as u32, height as u32);
+        if last_dimensions != Some(dimensions)
+            && let Ok(mut queue) = input_events.lock()
+        {
+            let notify = queue.push_event(InputEvent::ViewportReshape {
+                width: dimensions.0,
+                height: dimensions.1,
+            });
+            if let Some(pid) = notify {
+                notify_input_ready(pid);
+            }
+            last_dimensions = Some(dimensions);
+        }
+
+        let mut input = DrmInput::new(
+            dimensions,
+            Arc::clone(&input_mask),
+            input_events.clone(),
+            Arc::clone(&config.cursor_state),
+            config.input_log,
+        );
+
+        let mut cursor_plane = if config.hw_cursor {
+            match create_cursor_plane(&card, &gbm_device, &resources, crtc_handle) {
+                Ok(plane) => plane,
+                Err(e) => {
+                    eprintln!("DRM cursor setup failed: {e}");
+                    None
                 }
             }
         } else {
-            if cursor.visible && cursor.pos != last_cursor.pos {
-                dirty.store(true, Ordering::Relaxed);
-            }
-            if cursor.visible != last_cursor.visible {
-                dirty.store(true, Ordering::Relaxed);
-            }
-        }
-        last_cursor = cursor;
-        if dirty.swap(false, Ordering::Relaxed) {
-            let updated = text.lock().unwrap_or_else(|e| e.into_inner()).clone();
-            renderer.set_text(updated);
-            if let Ok(state) = render_state.lock() {
-                renderer.redraw(&state);
-            }
-            if cursor_plane.is_none() && cursor.visible {
-                draw_software_cursor(&mut renderer, cursor.pos, dimensions);
-            }
+            None
+        };
 
-            if unsafe {
-                egl_state
-                    .egl
-                    .SwapBuffers(egl_state.display, egl_state.surface)
-            } == egl::FALSE
-            {
-                eprintln!("DRM backend unavailable: eglSwapBuffers failed");
-                return;
-            }
-
-            let next_bo = match unsafe { gbm_surface.lock_front_buffer() } {
-                Ok(bo) => bo,
-                Err(e) => {
-                    eprintln!("DRM backend unavailable: {e}");
-                    return;
-                }
-            };
-
-            let next_fb = match framebuffer_for_bo(&card, &mut framebuffer_cache, &next_bo) {
-                Ok(fb) => fb,
-                Err(e) => {
-                    eprintln!("DRM backend unavailable: {e}");
-                    return;
-                }
-            };
-
-            let mut flip_req = atomic::AtomicModeReq::new();
-            if let Err(e) =
-                add_plane_properties(&mut flip_req, plane, &plane_props, crtc_handle, next_fb)
-            {
+        let gbm_surface: Surface<()> = match gbm_device.create_surface(
+            dimensions.0,
+            dimensions.1,
+            GbmFormat::Xrgb8888,
+            BufferObjectFlags::SCANOUT | BufferObjectFlags::RENDERING,
+        ) {
+            Ok(surface) => surface,
+            Err(e) => {
                 eprintln!("DRM backend unavailable: {e}");
-                return;
+                std::thread::sleep(Duration::from_millis(250));
+                continue;
             }
+        };
 
-            if let Err(e) = card.atomic_commit(
-                AtomicCommitFlags::NONBLOCK | AtomicCommitFlags::PAGE_FLIP_EVENT,
-                flip_req,
-            ) {
-                let err = e.to_string();
-                if is_ebusy(&err) {
-                    drop(next_bo);
-                    std::thread::sleep(Duration::from_millis(2));
-                    continue;
-                }
-                eprintln!("DRM backend unavailable: {err}");
-                return;
-            }
-
-            if let Err(e) = wait_for_page_flip(&card) {
+        let (egl_lib, egl_api) = match load_egl() {
+            Ok(values) => values,
+            Err(e) => {
                 eprintln!("DRM backend unavailable: {e}");
+                std::thread::sleep(Duration::from_millis(250));
+                continue;
+            }
+        };
+
+        let (display, context, surface) = match init_egl(
+            &egl_api,
+            gbm_device.as_raw() as *mut c_void,
+            gbm_surface.as_raw() as *mut c_void,
+        ) {
+            Ok(values) => values,
+            Err(e) => {
+                eprintln!("DRM backend unavailable: {e}");
+                std::thread::sleep(Duration::from_millis(250));
+                continue;
+            }
+        };
+
+        let egl_state = EglState {
+            egl: egl_api,
+            _egl_lib: egl_lib,
+            display,
+            _context: context,
+            surface,
+        };
+
+        let mut renderer = match create_renderer(&egl_state.egl, dimensions, String::new()) {
+            Ok(renderer) => renderer,
+            Err(e) => {
+                eprintln!("DRM backend unavailable: {e}");
+                std::thread::sleep(Duration::from_millis(250));
+                continue;
+            }
+        };
+
+        let mode_blob = match card.create_property_blob(&mode) {
+            Ok(blob) => blob,
+            Err(e) => {
+                eprintln!("DRM backend unavailable: {e}");
+                std::thread::sleep(Duration::from_millis(250));
+                continue;
+            }
+        };
+
+        let mut framebuffer_cache: HashMap<u32, framebuffer::Handle> = HashMap::new();
+
+        let initial_text = text.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        renderer.set_text(initial_text);
+        if let Ok(state) = render_state.lock() {
+            renderer.redraw(&state);
+        }
+        let mut cursor = cursor_snapshot(&config.cursor_state);
+        if cursor_plane.is_none() && cursor.visible {
+            draw_software_cursor(&mut renderer, cursor.pos, dimensions);
+        }
+
+        if unsafe {
+            egl_state
+                .egl
+                .SwapBuffers(egl_state.display, egl_state.surface)
+        } == egl::FALSE
+        {
+            eprintln!("DRM backend unavailable: eglSwapBuffers failed");
+            std::thread::sleep(Duration::from_millis(250));
+            continue;
+        }
+
+        let bo = match unsafe { gbm_surface.lock_front_buffer() } {
+            Ok(bo) => bo,
+            Err(e) => {
+                eprintln!("DRM backend unavailable: {e}");
+                std::thread::sleep(Duration::from_millis(250));
+                continue;
+            }
+        };
+
+        let fb = match framebuffer_for_bo(&card, &mut framebuffer_cache, &bo) {
+            Ok(fb) => fb,
+            Err(e) => {
+                eprintln!("DRM backend unavailable: {e}");
+                std::thread::sleep(Duration::from_millis(250));
+                continue;
+            }
+        };
+
+        let mut atomic_req = atomic::AtomicModeReq::new();
+        if let Err(e) = (|| -> Result<(), String> {
+            atomic_req.add_property(
+                connector,
+                prop_handle(&con_props, "CRTC_ID")?,
+                property::Value::CRTC(Some(crtc_handle)),
+            );
+            atomic_req.add_property(crtc_handle, prop_handle(&crtc_props, "MODE_ID")?, mode_blob);
+            atomic_req.add_property(
+                crtc_handle,
+                prop_handle(&crtc_props, "ACTIVE")?,
+                property::Value::Boolean(true),
+            );
+            add_plane_properties(&mut atomic_req, plane, &plane_props, crtc_handle, fb)?;
+            add_plane_geometry(&mut atomic_req, plane, &plane_props, &mode)
+        })() {
+            eprintln!("DRM backend unavailable: {e}");
+            std::thread::sleep(Duration::from_millis(250));
+            continue;
+        }
+
+        if let Err(e) = card.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, atomic_req) {
+            eprintln!("DRM backend unavailable: {e}");
+            std::thread::sleep(Duration::from_millis(250));
+            continue;
+        }
+
+        let mut current_bo = Some(bo);
+        let mut last_cursor = cursor;
+        let cursor_plane_error = cursor_plane.as_ref().and_then(|plane| {
+            update_cursor_plane(&card, crtc_handle, plane, cursor, dimensions).err()
+        });
+        if let Some(err) = cursor_plane_error
+            && !is_ebusy(&err)
+        {
+            eprintln!("DRM cursor update failed: {err}");
+            cursor_plane = None;
+            dirty.store(true, Ordering::Relaxed);
+        }
+
+        let mut next_hotplug_check = Instant::now() + hotplug_interval;
+
+        loop {
+            if stop.load(Ordering::Relaxed) {
                 return;
             }
 
-            drop(current_bo.take());
-            current_bo = Some(next_bo);
+            if Instant::now() >= next_hotplug_check {
+                let resources = match card.resource_handles() {
+                    Ok(handles) => handles,
+                    Err(_) => break,
+                };
+                let next = first_connected_connector(&card, &resources, config.requested_size);
+                match next {
+                    Ok((next_connector, next_mode, next_crtc)) => {
+                        let next_dimensions = next_mode.size();
+                        let next_dimensions = (next_dimensions.0 as u32, next_dimensions.1 as u32);
+                        if next_connector != connector
+                            || next_crtc != crtc_handle
+                            || next_dimensions != dimensions
+                        {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+                next_hotplug_check = Instant::now() + hotplug_interval;
+            }
+
+            input.poll();
+            cursor = cursor_snapshot(&config.cursor_state);
+            if cursor_plane.is_some() {
+                if cursor.visible != last_cursor.visible || cursor.pos != last_cursor.pos {
+                    let cursor_plane_error = cursor_plane.as_ref().and_then(|plane| {
+                        update_cursor_plane(&card, crtc_handle, plane, cursor, dimensions).err()
+                    });
+                    if let Some(err) = cursor_plane_error
+                        && !is_ebusy(&err)
+                    {
+                        eprintln!("DRM cursor update failed: {err}");
+                        cursor_plane = None;
+                        dirty.store(true, Ordering::Relaxed);
+                    }
+                }
+            } else {
+                if cursor.visible && cursor.pos != last_cursor.pos {
+                    dirty.store(true, Ordering::Relaxed);
+                }
+                if cursor.visible != last_cursor.visible {
+                    dirty.store(true, Ordering::Relaxed);
+                }
+            }
+            last_cursor = cursor;
+            if dirty.swap(false, Ordering::Relaxed) {
+                let updated = text.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                renderer.set_text(updated);
+                if let Ok(state) = render_state.lock() {
+                    renderer.redraw(&state);
+                }
+                if cursor_plane.is_none() && cursor.visible {
+                    draw_software_cursor(&mut renderer, cursor.pos, dimensions);
+                }
+
+                if unsafe {
+                    egl_state
+                        .egl
+                        .SwapBuffers(egl_state.display, egl_state.surface)
+                } == egl::FALSE
+                {
+                    eprintln!("DRM backend unavailable: eglSwapBuffers failed");
+                    break;
+                }
+
+                let next_bo = match unsafe { gbm_surface.lock_front_buffer() } {
+                    Ok(bo) => bo,
+                    Err(e) => {
+                        eprintln!("DRM backend unavailable: {e}");
+                        break;
+                    }
+                };
+
+                let next_fb = match framebuffer_for_bo(&card, &mut framebuffer_cache, &next_bo) {
+                    Ok(fb) => fb,
+                    Err(e) => {
+                        eprintln!("DRM backend unavailable: {e}");
+                        break;
+                    }
+                };
+
+                let mut flip_req = atomic::AtomicModeReq::new();
+                if let Err(e) =
+                    add_plane_properties(&mut flip_req, plane, &plane_props, crtc_handle, next_fb)
+                {
+                    eprintln!("DRM backend unavailable: {e}");
+                    break;
+                }
+
+                if let Err(e) = card.atomic_commit(
+                    AtomicCommitFlags::NONBLOCK | AtomicCommitFlags::PAGE_FLIP_EVENT,
+                    flip_req,
+                ) {
+                    let err = e.to_string();
+                    if is_ebusy(&err) {
+                        drop(next_bo);
+                        std::thread::sleep(Duration::from_millis(2));
+                        continue;
+                    }
+                    eprintln!("DRM backend unavailable: {err}");
+                    break;
+                }
+
+                if let Err(e) = wait_for_page_flip(&card) {
+                    eprintln!("DRM backend unavailable: {e}");
+                    break;
+                }
+
+                drop(current_bo.take());
+                current_bo = Some(next_bo);
+            }
+            std::thread::sleep(Duration::from_millis(4));
         }
-        std::thread::sleep(Duration::from_millis(4));
+
+        continue;
     }
 }

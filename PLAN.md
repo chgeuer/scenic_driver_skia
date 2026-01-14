@@ -33,19 +33,20 @@ Completed:
    - Emit viewport reshape input if mode differs from requested size.
 8. **Viewport window options (Wayland)**
    - Use `window` options for initial title/resizeable configuration.
+9. **DRM input integration**
+   - Evdev-based input pipeline with Scenic input translation.
+10. **Cursor support**
+   - Track cursor visibility and position in Rust.
+   - Hardware cursor plane support with software fallback.
+11. **Viewport options wiring**
+   - Use viewport size for initial window sizing (fallback to defaults).
+   - Configure DRM settings via driver options (card path, hw cursor, input logging).
+12. **DRM hotplug polling**
+   - Periodically rescan connectors and reinitialize on mode/connector changes.
 
 ## Next
-1. **DRM input integration**
-   - Choose evdev or reuse Scenic local input pipeline.
-   - Translate events through the shared translation module.
-2. **Cursor support**
-   - Track cursor visibility and last position in driver assigns.
-   - Implement show/hide cursor and cursor position updates for input events.
-3. **Window resize flow (DRM, if needed)**
-   - Confirm whether DRM needs explicit resize handling beyond initial modeset (hotplug).
-4. **Viewport options wiring**
-   - Use viewport size for initial window sizing (fallback to defaults).
-   - Wire DRM/Raster window-related options if needed.
+1. **Viewport options wiring**
+   - Wire any remaining Raster window-related options if needed.
 5. **Script opcode parity (rendering coverage)**
    - **Paths & geometry**: add path primitives (move/line/curve/close), rounded rects, ellipses, arcs.
    - **Paint features**: gradients, image patterns, alpha/opacity, blend modes, stroke caps/joins/dashes.
