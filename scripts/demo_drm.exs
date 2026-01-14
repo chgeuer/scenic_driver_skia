@@ -28,6 +28,7 @@ defmodule ScenicDriverSkia.DemoDrm do
         |> Scenic.Scene.assign(:key_text, "key: none")
         |> Scenic.Scene.assign(:cursor_visible, true)
         |> Scenic.Scene.assign(:cursor_toggle_text, "cursor_visible: true (press 'c' to toggle)")
+        |> Scenic.Scene.assign(:viewport_size_text, "viewport_size: none")
         |> Scenic.Scene.assign(:graph, graph)
         |> Scenic.Scene.push_graph(graph)
 
@@ -131,6 +132,24 @@ defmodule ScenicDriverSkia.DemoDrm do
       {:noreply, scene}
     end
 
+    def handle_input({:viewport, {:reshape, _size}}, _context, scene) do
+      {width, height} = current_viewport_size(scene)
+      Logger.info("viewport reshape -> ViewPort size now #{width}x#{height}")
+      text = "viewport_size: #{width}x#{height}"
+
+      graph =
+        scene.assigns.graph
+        |> Scenic.Graph.modify(:viewport_size_text, &Scenic.Primitives.text(&1, text))
+
+      scene =
+        scene
+        |> Scenic.Scene.assign(:viewport_size_text, text)
+        |> Scenic.Scene.assign(:graph, graph)
+        |> Scenic.Scene.push_graph(graph)
+
+      {:noreply, scene}
+    end
+
     def handle_info(:change_color, scene) do
       rect_fill =
         case scene.assigns.rect_fill do
@@ -164,6 +183,11 @@ defmodule ScenicDriverSkia.DemoDrm do
         fill: :white,
         translate: {60, 215}
       )
+      |> text("viewport_size: none",
+        id: :viewport_size_text,
+        fill: :white,
+        translate: {60, 265}
+      )
       |> analog_clock(radius: 50, seconds: true, translate: {800, 160}, theme: :light)
       |> digital_clock(
         format: :hours_12,
@@ -173,6 +197,11 @@ defmodule ScenicDriverSkia.DemoDrm do
         font_size: 18,
         fill: :white
       )
+    end
+
+    defp current_viewport_size(scene) do
+      {:ok, info} = Scenic.ViewPort.info(scene.viewport)
+      info.size
     end
 
     defp format_cursor_pos(x, y) do
