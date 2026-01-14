@@ -39,6 +39,28 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     end
   end
 
+  defmodule RRectVScene do
+    use Scenic.Scene
+    import Scenic.Primitives
+
+    def init(scene, _args, _opts) do
+      graph =
+        Scenic.Graph.build()
+        |> script("rrectv_demo", translate: {10, 10})
+
+      script =
+        Scenic.Script.start()
+        |> Scenic.Script.fill_color(:red)
+        |> Scenic.Script.stroke_color(:white)
+        |> Scenic.Script.stroke_width(2)
+        |> Scenic.Script.draw_variable_rounded_rectangle(20, 20, 2, 6, 10, 4, :fill_stroke)
+        |> Scenic.Script.finish()
+
+      scene = Scenic.Scene.push_script(scene, script, "rrectv_demo")
+      {:ok, Scenic.Scene.push_graph(scene, graph)}
+    end
+  end
+
   test "draw_rect fills expected pixels" do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
 
@@ -89,8 +111,7 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
 
     {width, _height, frame} =
       wait_for_frame!(40, fn {w, _h, data} ->
-        pixel_at(data, w, 20, 20) == {255, 0, 0} and
-          pixel_at(data, w, 20, 10) == {255, 255, 255}
+        pixel_at(data, w, 20, 20) == {255, 0, 0}
       end)
 
     # Background just outside the translated rrect bounds.
@@ -109,6 +130,42 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     assert pixel_at(frame, width, 30, 20) == {255, 255, 255}
     assert pixel_at(frame, width, 20, 30) == {255, 255, 255}
     # Fill sample inside the rrect.
+    assert pixel_at(frame, width, 20, 20) == {255, 0, 0}
+  end
+
+  test "draw_rrectv fills expected pixels" do
+    assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
+
+    vp = ViewPortHelper.start(size: {64, 64}, scene: RRectVScene)
+
+    on_exit(fn ->
+      if Process.alive?(vp.pid) do
+        _ = ViewPort.stop(vp)
+      end
+
+      _ = Native.stop()
+    end)
+
+    {width, _height, frame} =
+      wait_for_frame!(40, fn {w, _h, data} ->
+        pixel_at(data, w, 20, 20) == {255, 0, 0} and
+          pixel_at(data, w, 20, 10) == {255, 255, 255}
+      end)
+
+    # Background just outside the translated rrect bounds.
+    assert pixel_at(frame, width, 7, 10) == {0, 0, 0}
+    assert pixel_at(frame, width, 10, 7) == {0, 0, 0}
+    assert pixel_at(frame, width, 33, 10) == {0, 0, 0}
+    assert pixel_at(frame, width, 10, 33) == {0, 0, 0}
+    # Corner radii differ; check a sharp (small radius) and rounded (large radius) corner.
+    assert pixel_at(frame, width, 10, 10) != {0, 0, 0}
+    assert pixel_at(frame, width, 30, 30) == {0, 0, 0}
+    # Stroke samples on each edge (away from corners).
+    assert pixel_at(frame, width, 20, 10) != {0, 0, 0}
+    assert pixel_at(frame, width, 10, 20) != {0, 0, 0}
+    assert pixel_at(frame, width, 30, 20) != {0, 0, 0}
+    assert pixel_at(frame, width, 20, 30) != {0, 0, 0}
+    # Fill sample inside the rrectv.
     assert pixel_at(frame, width, 20, 20) == {255, 0, 0}
   end
 
