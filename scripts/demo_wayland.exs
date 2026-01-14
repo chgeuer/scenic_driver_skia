@@ -39,6 +39,12 @@ defmodule ScenicDriverSkia.DemoWayland do
         translate: {x4, y2}
       )
       |> text("triangle", fill: :white, translate: {x4, y2 + label_offset})
+      |> quad({{0, 0}, {200, 0}, {200, 120}, {0, 120}},
+        fill: :olive,
+        stroke: {3, :white},
+        translate: {x4, y1}
+      )
+      |> text("quad", fill: :white, translate: {x4, y1 + label_offset})
       |> arc({70, 1.6}, stroke: {6, :white}, translate: {x1 + 100, y3 + 60})
       |> text("arc", fill: :white, translate: {x1, y3 + label_offset})
       |> sector({70, 1.2}, fill: :teal, stroke: {3, :white}, translate: {x2 + 100, y3 + 60})

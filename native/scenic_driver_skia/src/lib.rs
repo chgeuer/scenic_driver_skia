@@ -755,6 +755,81 @@ fn parse_script(script: &[u8]) -> Result<Vec<ScriptOp>, String> {
                 });
                 rest = tail;
             }
+            0x03 => {
+                if rest.len() < 34 {
+                    return Err("draw_quad opcode truncated".to_string());
+                }
+                let (flag_bytes, tail) = rest.split_at(2);
+                let flag = u16::from_be_bytes([flag_bytes[0], flag_bytes[1]]);
+                let (x0_bytes, tail) = tail.split_at(4);
+                let (y0_bytes, tail) = tail.split_at(4);
+                let (x1_bytes, tail) = tail.split_at(4);
+                let (y1_bytes, tail) = tail.split_at(4);
+                let (x2_bytes, tail) = tail.split_at(4);
+                let (y2_bytes, tail) = tail.split_at(4);
+                let (x3_bytes, tail) = tail.split_at(4);
+                let (y3_bytes, tail) = tail.split_at(4);
+                let x0 = f32::from_bits(u32::from_be_bytes([
+                    x0_bytes[0],
+                    x0_bytes[1],
+                    x0_bytes[2],
+                    x0_bytes[3],
+                ]));
+                let y0 = f32::from_bits(u32::from_be_bytes([
+                    y0_bytes[0],
+                    y0_bytes[1],
+                    y0_bytes[2],
+                    y0_bytes[3],
+                ]));
+                let x1 = f32::from_bits(u32::from_be_bytes([
+                    x1_bytes[0],
+                    x1_bytes[1],
+                    x1_bytes[2],
+                    x1_bytes[3],
+                ]));
+                let y1 = f32::from_bits(u32::from_be_bytes([
+                    y1_bytes[0],
+                    y1_bytes[1],
+                    y1_bytes[2],
+                    y1_bytes[3],
+                ]));
+                let x2 = f32::from_bits(u32::from_be_bytes([
+                    x2_bytes[0],
+                    x2_bytes[1],
+                    x2_bytes[2],
+                    x2_bytes[3],
+                ]));
+                let y2 = f32::from_bits(u32::from_be_bytes([
+                    y2_bytes[0],
+                    y2_bytes[1],
+                    y2_bytes[2],
+                    y2_bytes[3],
+                ]));
+                let x3 = f32::from_bits(u32::from_be_bytes([
+                    x3_bytes[0],
+                    x3_bytes[1],
+                    x3_bytes[2],
+                    x3_bytes[3],
+                ]));
+                let y3 = f32::from_bits(u32::from_be_bytes([
+                    y3_bytes[0],
+                    y3_bytes[1],
+                    y3_bytes[2],
+                    y3_bytes[3],
+                ]));
+                ops.push(ScriptOp::DrawQuad {
+                    x0,
+                    y0,
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    x3,
+                    y3,
+                    flag,
+                });
+                rest = tail;
+            }
             0x04 => {
                 if rest.len() < 10 {
                     return Err("draw_rect opcode truncated".to_string());
@@ -1173,6 +1248,30 @@ mod tests {
                 y1: 0.0,
                 x2: 10.0,
                 y2: 20.0,
+                flag: 0x03
+            }]
+        );
+    }
+
+    #[test]
+    fn parse_draw_quad() {
+        let script: [u8; 36] = [
+            0x00, 0x03, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x41, 0x20,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x41, 0x20, 0x00, 0x00, 0x41, 0xA0, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x41, 0xA0, 0x00, 0x00,
+        ];
+        let ops = parse_script(&script).expect("parse_script failed");
+        assert_eq!(
+            ops,
+            vec![ScriptOp::DrawQuad {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 10.0,
+                y1: 0.0,
+                x2: 10.0,
+                y2: 20.0,
+                x3: 0.0,
+                y3: 20.0,
                 flag: 0x03
             }]
         );
