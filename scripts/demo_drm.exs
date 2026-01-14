@@ -235,7 +235,7 @@ defmodule ScenicDriverSkia.DemoDrm do
 
     {:ok, _vp} =
       Scenic.ViewPort.start(
-        size: {400, 300},
+        size: {2560, 1440},
         default_scene: DemoScene,
         drivers: [
           [module: Scenic.Driver.Skia, name: :skia_driver, backend: :drm] ++ driver_opts
