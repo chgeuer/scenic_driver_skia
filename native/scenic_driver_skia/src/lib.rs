@@ -756,6 +756,33 @@ fn parse_script(script: &[u8]) -> Result<Vec<ScriptOp>, String> {
                 ops.push(ScriptOp::DrawCircle { radius, flag });
                 rest = tail;
             }
+            0x09 => {
+                if rest.len() < 10 {
+                    return Err("draw_ellipse opcode truncated".to_string());
+                }
+                let (flag_bytes, tail) = rest.split_at(2);
+                let flag = u16::from_be_bytes([flag_bytes[0], flag_bytes[1]]);
+                let (r0_bytes, tail) = tail.split_at(4);
+                let (r1_bytes, tail) = tail.split_at(4);
+                let radius0 = f32::from_bits(u32::from_be_bytes([
+                    r0_bytes[0],
+                    r0_bytes[1],
+                    r0_bytes[2],
+                    r0_bytes[3],
+                ]));
+                let radius1 = f32::from_bits(u32::from_be_bytes([
+                    r1_bytes[0],
+                    r1_bytes[1],
+                    r1_bytes[2],
+                    r1_bytes[3],
+                ]));
+                ops.push(ScriptOp::DrawEllipse {
+                    radius0,
+                    radius1,
+                    flag,
+                });
+                rest = tail;
+            }
             0x0A => {
                 if rest.len() < 2 {
                     return Err("draw_text opcode truncated".to_string());
@@ -972,6 +999,22 @@ mod tests {
             ops,
             vec![ScriptOp::DrawCircle {
                 radius: 50.0,
+                flag: 0x03
+            }]
+        );
+    }
+
+    #[test]
+    fn parse_draw_ellipse() {
+        let script: [u8; 12] = [
+            0x00, 0x09, 0x00, 0x03, 0x42, 0x48, 0x00, 0x00, 0x41, 0xC8, 0x00, 0x00,
+        ];
+        let ops = parse_script(&script).expect("parse_script failed");
+        assert_eq!(
+            ops,
+            vec![ScriptOp::DrawEllipse {
+                radius0: 50.0,
+                radius1: 25.0,
                 flag: 0x03
             }]
         );

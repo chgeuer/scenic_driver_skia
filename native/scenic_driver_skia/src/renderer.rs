@@ -37,6 +37,11 @@ pub enum ScriptOp {
         radius: f32,
         flag: u16,
     },
+    DrawEllipse {
+        radius0: f32,
+        radius1: f32,
+        flag: u16,
+    },
     DrawRect {
         width: f32,
         height: f32,
@@ -294,6 +299,27 @@ fn draw_script(
                     paint.set_color(draw_state.stroke_color);
                     paint.set_stroke_width(draw_state.stroke_width);
                     canvas.draw_circle(Point::new(0.0, 0.0), *radius, &paint);
+                }
+            }
+            ScriptOp::DrawEllipse {
+                radius0,
+                radius1,
+                flag,
+            } => {
+                let rect = Rect::from_xywh(-radius0, -radius1, radius0 * 2.0, radius1 * 2.0);
+                if flag & 0x01 == 0x01 {
+                    let mut paint = Paint::default();
+                    paint.set_anti_alias(true);
+                    paint.set_color(draw_state.fill_color);
+                    canvas.draw_oval(rect, &paint);
+                }
+                if flag & 0x02 == 0x02 {
+                    let mut paint = Paint::default();
+                    paint.set_anti_alias(true);
+                    paint.set_style(PaintStyle::Stroke);
+                    paint.set_color(draw_state.stroke_color);
+                    paint.set_stroke_width(draw_state.stroke_width);
+                    canvas.draw_oval(rect, &paint);
                 }
             }
             ScriptOp::DrawRect {
