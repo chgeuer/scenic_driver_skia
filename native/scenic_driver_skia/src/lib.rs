@@ -743,6 +743,59 @@ fn parse_script(script: &[u8]) -> Result<Vec<ScriptOp>, String> {
                 });
                 rest = tail;
             }
+            0x0C => {
+                if rest.len() < 26 {
+                    return Err("draw_rrectv opcode truncated".to_string());
+                }
+                let (flag_bytes, tail) = rest.split_at(2);
+                let flag = u16::from_be_bytes([flag_bytes[0], flag_bytes[1]]);
+                let (w_bytes, tail) = tail.split_at(4);
+                let (h_bytes, tail) = tail.split_at(4);
+                let (ul_bytes, tail) = tail.split_at(4);
+                let (ur_bytes, tail) = tail.split_at(4);
+                let (lr_bytes, tail) = tail.split_at(4);
+                let (ll_bytes, tail) = tail.split_at(4);
+                let width = f32::from_bits(u32::from_be_bytes([
+                    w_bytes[0], w_bytes[1], w_bytes[2], w_bytes[3],
+                ]));
+                let height = f32::from_bits(u32::from_be_bytes([
+                    h_bytes[0], h_bytes[1], h_bytes[2], h_bytes[3],
+                ]));
+                let ul_radius = f32::from_bits(u32::from_be_bytes([
+                    ul_bytes[0],
+                    ul_bytes[1],
+                    ul_bytes[2],
+                    ul_bytes[3],
+                ]));
+                let ur_radius = f32::from_bits(u32::from_be_bytes([
+                    ur_bytes[0],
+                    ur_bytes[1],
+                    ur_bytes[2],
+                    ur_bytes[3],
+                ]));
+                let lr_radius = f32::from_bits(u32::from_be_bytes([
+                    lr_bytes[0],
+                    lr_bytes[1],
+                    lr_bytes[2],
+                    lr_bytes[3],
+                ]));
+                let ll_radius = f32::from_bits(u32::from_be_bytes([
+                    ll_bytes[0],
+                    ll_bytes[1],
+                    ll_bytes[2],
+                    ll_bytes[3],
+                ]));
+                ops.push(ScriptOp::DrawRRectV {
+                    width,
+                    height,
+                    ul_radius,
+                    ur_radius,
+                    lr_radius,
+                    ll_radius,
+                    flag,
+                });
+                rest = tail;
+            }
             0x06 => {
                 if rest.len() < 10 {
                     return Err("draw_arc opcode truncated".to_string());
@@ -1120,6 +1173,27 @@ mod tests {
                 width: 40.0,
                 height: 20.0,
                 radius: 10.0,
+                flag: 0x03
+            }]
+        );
+    }
+
+    #[test]
+    fn parse_draw_rrectv() {
+        let script: [u8; 28] = [
+            0x00, 0x0C, 0x00, 0x03, 0x42, 0x20, 0x00, 0x00, 0x41, 0xA0, 0x00, 0x00, 0x41, 0x20,
+            0x00, 0x00, 0x41, 0x00, 0x00, 0x00, 0x41, 0x80, 0x00, 0x00, 0x40, 0x80, 0x00, 0x00,
+        ];
+        let ops = parse_script(&script).expect("parse_script failed");
+        assert_eq!(
+            ops,
+            vec![ScriptOp::DrawRRectV {
+                width: 40.0,
+                height: 20.0,
+                ul_radius: 10.0,
+                ur_radius: 8.0,
+                lr_radius: 16.0,
+                ll_radius: 4.0,
                 flag: 0x03
             }]
         );

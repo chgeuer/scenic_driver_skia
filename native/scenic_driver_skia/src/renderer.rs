@@ -58,6 +58,15 @@ pub enum ScriptOp {
         radius: f32,
         flag: u16,
     },
+    DrawRRectV {
+        width: f32,
+        height: f32,
+        ul_radius: f32,
+        ur_radius: f32,
+        lr_radius: f32,
+        ll_radius: f32,
+        flag: u16,
+    },
     DrawText(String),
     Font(String),
     FontSize(f32),
@@ -380,6 +389,38 @@ fn draw_script(
             } => {
                 let rect = Rect::from_xywh(0.0, 0.0, *width, *height);
                 let rrect = RRect::new_rect_xy(rect, *radius, *radius);
+                if flag & 0x01 == 0x01 {
+                    let mut paint = Paint::default();
+                    paint.set_anti_alias(true);
+                    paint.set_color(draw_state.fill_color);
+                    canvas.draw_rrect(rrect, &paint);
+                }
+                if flag & 0x02 == 0x02 {
+                    let mut paint = Paint::default();
+                    paint.set_anti_alias(true);
+                    paint.set_style(PaintStyle::Stroke);
+                    paint.set_color(draw_state.stroke_color);
+                    paint.set_stroke_width(draw_state.stroke_width);
+                    canvas.draw_rrect(rrect, &paint);
+                }
+            }
+            ScriptOp::DrawRRectV {
+                width,
+                height,
+                ul_radius,
+                ur_radius,
+                lr_radius,
+                ll_radius,
+                flag,
+            } => {
+                let rect = Rect::from_xywh(0.0, 0.0, *width, *height);
+                let radii = [
+                    Vector::new(*ul_radius, *ul_radius),
+                    Vector::new(*ur_radius, *ur_radius),
+                    Vector::new(*lr_radius, *lr_radius),
+                    Vector::new(*ll_radius, *ll_radius),
+                ];
+                let rrect = RRect::new_rect_radii(rect, &radii);
                 if flag & 0x01 == 0x01 {
                     let mut paint = Paint::default();
                     paint.set_anti_alias(true);
