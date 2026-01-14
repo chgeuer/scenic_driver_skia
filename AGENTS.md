@@ -13,7 +13,11 @@ This repository contains a Rust project with an Elixir wrapper. Please follow th
 - Reference Scenic source code at `/workspace/scenic` and local driver implementations at `/workspace/scenci_driver_local` when needed.
 - Always address warnings (compiler, runtime, or test) rather than ignoring them.
 - Keep `scripts/demo_wayland.exs` updated so every implemented script opcode is visible in the demo.
-- Add a raster test for every implemented primitive before marking it complete.
+- For every implemented drawing opcode, add a raster test that validates:
+  - A translated primitive renders at the expected location.
+  - Pixels just outside the stroke are background.
+  - Multiple pixels along each stroke edge match the stroke color.
+  - At least one pixel inside the shape matches the fill color (when applicable).
 - See `GUIDES.md` for architecture and driver data-flow notes.
 - See `ASSETS.md` for asset pipeline and font alias details.
 
