@@ -51,6 +51,7 @@ Completed:
    - **Paint features**: gradients, image patterns, alpha/opacity, blend modes, stroke caps/joins/dashes.
    - **Images/bitmaps**: implement image draw ops and texture/stream asset handling similar to Scenic local driver `put_texture` flow.
    - **Clipping**: implement clip rect/path and save/restore semantics to match Scenic script behavior.
+   - **Raster coverage**: add per-primitive raster tests for every implemented opcode.
 2. **Asset pipeline completeness**
    - Implement streaming asset updates and caching for images/bitmaps from Scenic assets.
    - Validate font aliasing and fallback behavior with Scenic defaults in `ASSETS.md`.
