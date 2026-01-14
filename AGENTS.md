@@ -11,7 +11,7 @@ This repository contains a Rust project with an Elixir wrapper. Please follow th
 - Document test commands you run in your final summary, noting any failures or external blockers.
 - Prefer small, focused modules. Keep rendering logic backend-agnostic and isolate backend/windowing concerns in their own modules.
 - Avoid adding unnecessary dependencies; prefer the standard library where practical.
-- Reference Scenic source code at `/workspace/scenic` and local driver implementations at `/workspace/scenci_driver_local` when needed.
+- Reference Scenic source code at `/workspace/scenic` and local driver implementations at `/workspace/scenic_driver_local` when needed.
 - Always address warnings (compiler, runtime, or test) rather than ignoring them.
 - Keep `scripts/demo_wayland.exs` updated so every implemented script opcode is visible in the demo.
 - For every implemented drawing opcode, add a raster test that validates:

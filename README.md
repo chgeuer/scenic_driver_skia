@@ -30,7 +30,7 @@ Configure the driver on a `ViewPort`:
 [
   drivers: [
     [
-      module: ScenicDriverSkia.Driver,
+      module: Scenic.Driver.Skia,
       name: :skia_driver,
       backend: :wayland,
       debug: false,
@@ -40,7 +40,7 @@ Configure the driver on a `ViewPort`:
 ]
 ```
 
-Options are validated with `NimbleOptions`. See `ScenicDriverSkia.Driver` for the full
+Options are validated with `NimbleOptions`. See `Scenic.Driver.Skia` for the full
 schema and defaults.
 
 ## Backends

@@ -16,8 +16,8 @@ The local copies live in `assets/fonts/` and are included in the assets module.
 
 ## Configuration
 Asset configuration is handled by:
-- `lib/scenic_driver_skia/assets.ex`
+- `lib/scenic/driver/skia/assets.ex`
 - `config/config.exs`
 
 When you add or change assets, force a recompile by touching
-`lib/scenic_driver_skia/assets.ex` or running `mix compile`.
+`lib/scenic/driver/skia/assets.ex` or running `mix compile`.

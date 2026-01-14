@@ -57,8 +57,8 @@ Completed:
    - **Clipping**: implement clip rect/path and save/restore semantics to match Scenic script behavior.
    - **Raster coverage**: expand per-primitive raster tests for upcoming paint, image, and clipping features.
 2. **Asset pipeline completeness**
-   - Implement streaming asset updates and caching for images/bitmaps from Scenic assets.
    - Validate font aliasing and fallback behavior with Scenic defaults in `ASSETS.md`.
+   - Document stream image update flow in `GUIDES.md`.
 7. **Backend polish & correctness**
    - Wayland: honor resizeable and other window options; ensure redraw scheduling on updates.
    - DRM: confirm atomic commit error paths, consider robust mode selection, and add device selection overrides as needed.
