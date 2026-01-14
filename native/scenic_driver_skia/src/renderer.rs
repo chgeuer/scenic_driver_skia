@@ -3,7 +3,7 @@ use std::sync::{Mutex, OnceLock};
 
 use skia_safe::{
     ClipOp, Color, ColorType, Font, FontMgr, FontStyle, Matrix, Paint, PaintCap, PaintJoin,
-    PaintStyle, PathBuilder, Point, RRect, Rect, Surface, Typeface, Vector,
+    PaintStyle, PathBuilder, Point, RRect, Rect, Shader, Surface, TileMode, Typeface, Vector,
     gpu::{self, SurfaceOrigin, backend_render_targets, gl::FramebufferInfo},
 };
 
@@ -26,6 +26,22 @@ pub enum ScriptOp {
     FillColor(Color),
     StrokeColor(Color),
     StrokeWidth(f32),
+    FillLinear {
+        start_x: f32,
+        start_y: f32,
+        end_x: f32,
+        end_y: f32,
+        start_color: Color,
+        end_color: Color,
+    },
+    StrokeLinear {
+        start_x: f32,
+        start_y: f32,
+        end_x: f32,
+        end_y: f32,
+        start_color: Color,
+        end_color: Color,
+    },
     StrokeCap(PaintCap),
     StrokeJoin(PaintJoin),
     StrokeMiterLimit(f32),
@@ -345,9 +361,53 @@ fn draw_script(
                 let matrix = Matrix::new_all(*a, *c, *e, *b, *d, *f, 0.0, 0.0, 1.0);
                 canvas.concat(&matrix);
             }
-            ScriptOp::FillColor(color) => draw_state.fill_color = *color,
-            ScriptOp::StrokeColor(color) => draw_state.stroke_color = *color,
+            ScriptOp::FillColor(color) => {
+                draw_state.fill_color = *color;
+                draw_state.fill_shader = None;
+            }
+            ScriptOp::StrokeColor(color) => {
+                draw_state.stroke_color = *color;
+                draw_state.stroke_shader = None;
+            }
             ScriptOp::StrokeWidth(width) => draw_state.stroke_width = *width,
+            ScriptOp::FillLinear {
+                start_x,
+                start_y,
+                end_x,
+                end_y,
+                start_color,
+                end_color,
+            } => {
+                draw_state.fill_color = *start_color;
+                let colors = [*start_color, *end_color];
+                draw_state.fill_shader = Shader::linear_gradient(
+                    (Point::new(*start_x, *start_y), Point::new(*end_x, *end_y)),
+                    colors.as_slice(),
+                    None,
+                    TileMode::Clamp,
+                    None,
+                    None,
+                );
+            }
+            ScriptOp::StrokeLinear {
+                start_x,
+                start_y,
+                end_x,
+                end_y,
+                start_color,
+                end_color,
+            } => {
+                draw_state.stroke_color = *start_color;
+                let colors = [*start_color, *end_color];
+                draw_state.stroke_shader = Shader::linear_gradient(
+                    (Point::new(*start_x, *start_y), Point::new(*end_x, *end_y)),
+                    colors.as_slice(),
+                    None,
+                    TileMode::Clamp,
+                    None,
+                    None,
+                );
+            }
             ScriptOp::StrokeCap(cap) => draw_state.stroke_cap = *cap,
             ScriptOp::StrokeJoin(join) => draw_state.stroke_join = *join,
             ScriptOp::StrokeMiterLimit(limit) => draw_state.stroke_miter_limit = *limit,
@@ -364,8 +424,7 @@ fn draw_script(
             ScriptOp::FillPath => {
                 if let Some(path) = draw_state.path.as_ref() {
                     let mut paint = Paint::default();
-                    paint.set_style(PaintStyle::Fill);
-                    paint.set_color(draw_state.fill_color);
+                    apply_fill_paint(&mut paint, draw_state);
                     let mut cloned = path.clone();
                     canvas.draw_path(&cloned.detach(), &paint);
                 }
@@ -373,12 +432,7 @@ fn draw_script(
             ScriptOp::StrokePath => {
                 if let Some(mut path) = draw_state.path.take() {
                     let mut paint = Paint::default();
-                    paint.set_style(PaintStyle::Stroke);
-                    paint.set_color(draw_state.stroke_color);
-                    paint.set_stroke_width(draw_state.stroke_width);
-                    paint.set_stroke_cap(draw_state.stroke_cap);
-                    paint.set_stroke_join(draw_state.stroke_join);
-                    paint.set_stroke_miter(draw_state.stroke_miter_limit);
+                    apply_stroke_paint(&mut paint, draw_state);
                     canvas.draw_path(&path.detach(), &paint);
                 }
             }
@@ -430,13 +484,7 @@ fn draw_script(
             } => {
                 if flag & 0x02 == 0x02 {
                     let mut paint = Paint::default();
-                    paint.set_anti_alias(true);
-                    paint.set_style(PaintStyle::Stroke);
-                    paint.set_color(draw_state.stroke_color);
-                    paint.set_stroke_width(draw_state.stroke_width);
-                    paint.set_stroke_cap(draw_state.stroke_cap);
-                    paint.set_stroke_join(draw_state.stroke_join);
-                    paint.set_stroke_miter(draw_state.stroke_miter_limit);
+                    apply_stroke_paint(&mut paint, draw_state);
                     canvas.draw_line(Point::new(*x0, *y0), Point::new(*x1, *y1), &paint);
                 }
             }
@@ -458,20 +506,12 @@ fn draw_script(
                 let path = builder.detach();
                 if flag & 0x01 == 0x01 {
                     let mut paint = Paint::default();
-                    paint.set_anti_alias(true);
-                    paint.set_style(PaintStyle::Fill);
-                    paint.set_color(draw_state.fill_color);
+                    apply_fill_paint(&mut paint, draw_state);
                     canvas.draw_path(&path, &paint);
                 }
                 if flag & 0x02 == 0x02 {
                     let mut paint = Paint::default();
-                    paint.set_anti_alias(true);
-                    paint.set_style(PaintStyle::Stroke);
-                    paint.set_color(draw_state.stroke_color);
-                    paint.set_stroke_width(draw_state.stroke_width);
-                    paint.set_stroke_cap(draw_state.stroke_cap);
-                    paint.set_stroke_join(draw_state.stroke_join);
-                    paint.set_stroke_miter(draw_state.stroke_miter_limit);
+                    apply_stroke_paint(&mut paint, draw_state);
                     canvas.draw_path(&path, &paint);
                 }
             }
@@ -496,39 +536,24 @@ fn draw_script(
                 let path = builder.detach();
                 if flag & 0x01 == 0x01 {
                     let mut paint = Paint::default();
-                    paint.set_anti_alias(true);
-                    paint.set_style(PaintStyle::Fill);
-                    paint.set_color(draw_state.fill_color);
+                    apply_fill_paint(&mut paint, draw_state);
                     canvas.draw_path(&path, &paint);
                 }
                 if flag & 0x02 == 0x02 {
                     let mut paint = Paint::default();
-                    paint.set_anti_alias(true);
-                    paint.set_style(PaintStyle::Stroke);
-                    paint.set_color(draw_state.stroke_color);
-                    paint.set_stroke_width(draw_state.stroke_width);
-                    paint.set_stroke_cap(draw_state.stroke_cap);
-                    paint.set_stroke_join(draw_state.stroke_join);
-                    paint.set_stroke_miter(draw_state.stroke_miter_limit);
+                    apply_stroke_paint(&mut paint, draw_state);
                     canvas.draw_path(&path, &paint);
                 }
             }
             ScriptOp::DrawCircle { radius, flag } => {
                 if flag & 0x01 == 0x01 {
                     let mut paint = Paint::default();
-                    paint.set_anti_alias(true);
-                    paint.set_color(draw_state.fill_color);
+                    apply_fill_paint(&mut paint, draw_state);
                     canvas.draw_circle(Point::new(0.0, 0.0), *radius, &paint);
                 }
                 if flag & 0x02 == 0x02 {
                     let mut paint = Paint::default();
-                    paint.set_anti_alias(true);
-                    paint.set_style(PaintStyle::Stroke);
-                    paint.set_color(draw_state.stroke_color);
-                    paint.set_stroke_width(draw_state.stroke_width);
-                    paint.set_stroke_cap(draw_state.stroke_cap);
-                    paint.set_stroke_join(draw_state.stroke_join);
-                    paint.set_stroke_miter(draw_state.stroke_miter_limit);
+                    apply_stroke_paint(&mut paint, draw_state);
                     canvas.draw_circle(Point::new(0.0, 0.0), *radius, &paint);
                 }
             }
@@ -540,19 +565,12 @@ fn draw_script(
                 let rect = Rect::from_xywh(-radius0, -radius1, radius0 * 2.0, radius1 * 2.0);
                 if flag & 0x01 == 0x01 {
                     let mut paint = Paint::default();
-                    paint.set_anti_alias(true);
-                    paint.set_color(draw_state.fill_color);
+                    apply_fill_paint(&mut paint, draw_state);
                     canvas.draw_oval(rect, &paint);
                 }
                 if flag & 0x02 == 0x02 {
                     let mut paint = Paint::default();
-                    paint.set_anti_alias(true);
-                    paint.set_style(PaintStyle::Stroke);
-                    paint.set_color(draw_state.stroke_color);
-                    paint.set_stroke_width(draw_state.stroke_width);
-                    paint.set_stroke_cap(draw_state.stroke_cap);
-                    paint.set_stroke_join(draw_state.stroke_join);
-                    paint.set_stroke_miter(draw_state.stroke_miter_limit);
+                    apply_stroke_paint(&mut paint, draw_state);
                     canvas.draw_oval(rect, &paint);
                 }
             }
@@ -566,19 +584,12 @@ fn draw_script(
                 let sweep = radians.to_degrees();
                 if flag & 0x01 == 0x01 {
                     let mut paint = Paint::default();
-                    paint.set_anti_alias(true);
-                    paint.set_color(draw_state.fill_color);
+                    apply_fill_paint(&mut paint, draw_state);
                     canvas.draw_arc(rect, start, sweep, false, &paint);
                 }
                 if flag & 0x02 == 0x02 {
                     let mut paint = Paint::default();
-                    paint.set_anti_alias(true);
-                    paint.set_style(PaintStyle::Stroke);
-                    paint.set_color(draw_state.stroke_color);
-                    paint.set_stroke_width(draw_state.stroke_width);
-                    paint.set_stroke_cap(draw_state.stroke_cap);
-                    paint.set_stroke_join(draw_state.stroke_join);
-                    paint.set_stroke_miter(draw_state.stroke_miter_limit);
+                    apply_stroke_paint(&mut paint, draw_state);
                     canvas.draw_arc(rect, start, sweep, false, &paint);
                 }
             }
@@ -598,20 +609,12 @@ fn draw_script(
                 let path = builder.detach();
                 if flag & 0x01 == 0x01 {
                     let mut paint = Paint::default();
-                    paint.set_anti_alias(true);
-                    paint.set_style(PaintStyle::Fill);
-                    paint.set_color(draw_state.fill_color);
+                    apply_fill_paint(&mut paint, draw_state);
                     canvas.draw_path(&path, &paint);
                 }
                 if flag & 0x02 == 0x02 {
                     let mut paint = Paint::default();
-                    paint.set_anti_alias(true);
-                    paint.set_style(PaintStyle::Stroke);
-                    paint.set_color(draw_state.stroke_color);
-                    paint.set_stroke_width(draw_state.stroke_width);
-                    paint.set_stroke_cap(draw_state.stroke_cap);
-                    paint.set_stroke_join(draw_state.stroke_join);
-                    paint.set_stroke_miter(draw_state.stroke_miter_limit);
+                    apply_stroke_paint(&mut paint, draw_state);
                     canvas.draw_path(&path, &paint);
                 }
             }
@@ -623,20 +626,13 @@ fn draw_script(
                 if flag & 0x01 == 0x01 {
                     let rect = Rect::from_xywh(0.0, 0.0, *width, *height);
                     let mut paint = Paint::default();
-                    paint.set_anti_alias(true);
-                    paint.set_color(draw_state.fill_color);
+                    apply_fill_paint(&mut paint, draw_state);
                     canvas.draw_rect(rect, &paint);
                 }
                 if flag & 0x02 == 0x02 {
                     let rect = Rect::from_xywh(0.0, 0.0, *width, *height);
                     let mut paint = Paint::default();
-                    paint.set_anti_alias(true);
-                    paint.set_style(PaintStyle::Stroke);
-                    paint.set_color(draw_state.stroke_color);
-                    paint.set_stroke_width(draw_state.stroke_width);
-                    paint.set_stroke_cap(draw_state.stroke_cap);
-                    paint.set_stroke_join(draw_state.stroke_join);
-                    paint.set_stroke_miter(draw_state.stroke_miter_limit);
+                    apply_stroke_paint(&mut paint, draw_state);
                     canvas.draw_rect(rect, &paint);
                 }
             }
@@ -650,19 +646,12 @@ fn draw_script(
                 let rrect = RRect::new_rect_xy(rect, *radius, *radius);
                 if flag & 0x01 == 0x01 {
                     let mut paint = Paint::default();
-                    paint.set_anti_alias(true);
-                    paint.set_color(draw_state.fill_color);
+                    apply_fill_paint(&mut paint, draw_state);
                     canvas.draw_rrect(rrect, &paint);
                 }
                 if flag & 0x02 == 0x02 {
                     let mut paint = Paint::default();
-                    paint.set_anti_alias(true);
-                    paint.set_style(PaintStyle::Stroke);
-                    paint.set_color(draw_state.stroke_color);
-                    paint.set_stroke_width(draw_state.stroke_width);
-                    paint.set_stroke_cap(draw_state.stroke_cap);
-                    paint.set_stroke_join(draw_state.stroke_join);
-                    paint.set_stroke_miter(draw_state.stroke_miter_limit);
+                    apply_stroke_paint(&mut paint, draw_state);
                     canvas.draw_rrect(rrect, &paint);
                 }
             }
@@ -685,19 +674,12 @@ fn draw_script(
                 let rrect = RRect::new_rect_radii(rect, &radii);
                 if flag & 0x01 == 0x01 {
                     let mut paint = Paint::default();
-                    paint.set_anti_alias(true);
-                    paint.set_color(draw_state.fill_color);
+                    apply_fill_paint(&mut paint, draw_state);
                     canvas.draw_rrect(rrect, &paint);
                 }
                 if flag & 0x02 == 0x02 {
                     let mut paint = Paint::default();
-                    paint.set_anti_alias(true);
-                    paint.set_style(PaintStyle::Stroke);
-                    paint.set_color(draw_state.stroke_color);
-                    paint.set_stroke_width(draw_state.stroke_width);
-                    paint.set_stroke_cap(draw_state.stroke_cap);
-                    paint.set_stroke_join(draw_state.stroke_join);
-                    paint.set_stroke_miter(draw_state.stroke_miter_limit);
+                    apply_stroke_paint(&mut paint, draw_state);
                     canvas.draw_rrect(rrect, &paint);
                 }
             }
@@ -710,8 +692,7 @@ fn draw_script(
                     && !text.is_empty()
                 {
                     let mut paint = Paint::default();
-                    paint.set_anti_alias(true);
-                    paint.set_color(draw_state.fill_color);
+                    apply_fill_paint(&mut paint, draw_state);
                     let (dx, dy) = draw_state.text_offsets(text, font, &paint);
                     canvas.draw_str(text, (dx, dy), font, &paint);
                 }
@@ -727,6 +708,32 @@ fn draw_script(
     }
 
     stack_ids.pop();
+}
+
+fn apply_fill_paint(paint: &mut Paint, draw_state: &DrawState) {
+    paint.set_anti_alias(true);
+    paint.set_style(PaintStyle::Fill);
+    if let Some(shader) = &draw_state.fill_shader {
+        paint.set_shader(shader.clone());
+        paint.set_color(Color::WHITE);
+    } else {
+        paint.set_color(draw_state.fill_color);
+    }
+}
+
+fn apply_stroke_paint(paint: &mut Paint, draw_state: &DrawState) {
+    paint.set_anti_alias(true);
+    paint.set_style(PaintStyle::Stroke);
+    paint.set_stroke_width(draw_state.stroke_width);
+    paint.set_stroke_cap(draw_state.stroke_cap);
+    paint.set_stroke_join(draw_state.stroke_join);
+    paint.set_stroke_miter(draw_state.stroke_miter_limit);
+    if let Some(shader) = &draw_state.stroke_shader {
+        paint.set_shader(shader.clone());
+        paint.set_color(Color::WHITE);
+    } else {
+        paint.set_color(draw_state.stroke_color);
+    }
 }
 
 fn default_font(size: f32) -> Option<Font> {
@@ -775,7 +782,9 @@ fn typeface_from_asset(font_id: &str) -> Option<Typeface> {
 #[derive(Clone)]
 struct DrawState {
     fill_color: Color,
+    fill_shader: Option<Shader>,
     stroke_color: Color,
+    stroke_shader: Option<Shader>,
     stroke_width: f32,
     stroke_cap: PaintCap,
     stroke_join: PaintJoin,
@@ -792,7 +801,9 @@ impl Default for DrawState {
     fn default() -> Self {
         Self {
             fill_color: Color::BLACK,
+            fill_shader: None,
             stroke_color: Color::BLACK,
+            stroke_shader: None,
             stroke_width: 1.0,
             stroke_cap: PaintCap::Butt,
             stroke_join: PaintJoin::Miter,
@@ -813,7 +824,9 @@ impl DrawState {
     fn push(&mut self) {
         self.stack.push(DrawStateSnapshot {
             fill_color: self.fill_color,
+            fill_shader: self.fill_shader.clone(),
             stroke_color: self.stroke_color,
+            stroke_shader: self.stroke_shader.clone(),
             stroke_width: self.stroke_width,
             stroke_cap: self.stroke_cap,
             stroke_join: self.stroke_join,
@@ -843,7 +856,9 @@ impl DrawState {
 
     fn apply_snapshot(&mut self, snapshot: DrawStateSnapshot) {
         self.fill_color = snapshot.fill_color;
+        self.fill_shader = snapshot.fill_shader;
         self.stroke_color = snapshot.stroke_color;
+        self.stroke_shader = snapshot.stroke_shader;
         self.stroke_width = snapshot.stroke_width;
         self.stroke_cap = snapshot.stroke_cap;
         self.stroke_join = snapshot.stroke_join;
@@ -876,7 +891,9 @@ impl DrawState {
 #[derive(Clone)]
 struct DrawStateSnapshot {
     fill_color: Color,
+    fill_shader: Option<Shader>,
     stroke_color: Color,
+    stroke_shader: Option<Shader>,
     stroke_width: f32,
     stroke_cap: PaintCap,
     stroke_join: PaintJoin,
@@ -892,7 +909,9 @@ impl Default for DrawStateSnapshot {
     fn default() -> Self {
         Self {
             fill_color: Color::BLACK,
+            fill_shader: None,
             stroke_color: Color::BLACK,
+            stroke_shader: None,
             stroke_width: 1.0,
             stroke_cap: PaintCap::Butt,
             stroke_join: PaintJoin::Miter,

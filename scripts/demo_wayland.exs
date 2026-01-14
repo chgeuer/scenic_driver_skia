@@ -101,11 +101,21 @@ defmodule ScenicDriverSkia.DemoWayland do
         translate: {x1, y4}
       )
       |> text("scissor", fill: :white, translate: {x1, y4 + label_offset})
+      |> line({{0, 0}, {200, 0}},
+        stroke: {12, {:linear, {0, 0, 200, 0, :red, :blue}}},
+        translate: {x1, y4 + 140}
+      )
+      |> text("linear stroke", fill: :white, translate: {x1, y4 + 170})
       |> rect({200, 120},
         fill: {:color_rgba, {255, 0, 0, 128}},
         translate: {x3, y4}
       )
       |> text("alpha 0.5", fill: :white, translate: {x3, y4 + label_offset})
+      |> rect({200, 80},
+        fill: {:linear, {0, 0, 200, 0, :red, :blue}},
+        translate: {x3, y4 + 140}
+      )
+      |> text("linear gradient", fill: :white, translate: {x3, y4 + 230})
       |> path(
         [
           :begin,

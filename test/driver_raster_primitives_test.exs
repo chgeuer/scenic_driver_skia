@@ -436,7 +436,39 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     end
   end
 
-  defmodule CapButtScene do
+  defmodule LinearGradientScene do
+    use Scenic.Scene
+    import Scenic.Primitives
+
+    def init(scene, _args, _opts) do
+      graph =
+        Scenic.Graph.build()
+        |> rect({20, 20},
+          fill: {:linear, {0, 0, 20, 0, :red, :blue}},
+          translate: {10, 10}
+        )
+
+      {:ok, Scenic.Scene.push_graph(scene, graph)}
+    end
+  end
+
+  defmodule LinearStrokeScene do
+    use Scenic.Scene
+    import Scenic.Primitives
+
+    def init(scene, _args, _opts) do
+      graph =
+        Scenic.Graph.build()
+        |> line({{0, 0}, {20, 0}},
+          stroke: {6, {:linear, {0, 0, 20, 0, :red, :blue}}},
+          translate: {10, 20}
+        )
+
+      {:ok, Scenic.Scene.push_graph(scene, graph)}
+    end
+  end
+
+  defmodule CapCompareScene do
     use Scenic.Scene
     import Scenic.Primitives
 
@@ -446,24 +478,12 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
         |> line({{0, 0}, {20, 0}},
           stroke: {10, :white},
           cap: :butt,
-          translate: {10, 30}
+          translate: {10, 20}
         )
-
-      {:ok, Scenic.Scene.push_graph(scene, graph)}
-    end
-  end
-
-  defmodule CapSquareScene do
-    use Scenic.Scene
-    import Scenic.Primitives
-
-    def init(scene, _args, _opts) do
-      graph =
-        Scenic.Graph.build()
         |> line({{0, 0}, {20, 0}},
           stroke: {10, :white},
           cap: :square,
-          translate: {10, 30}
+          translate: {10, 40}
         )
 
       {:ok, Scenic.Scene.push_graph(scene, graph)}
@@ -1304,10 +1324,10 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     assert pixel_at(frame, width, 20, 20) |> green_blue_zero?()
   end
 
-  test "cap butt does not extend past line endpoint" do
+  test "linear gradient fill transitions across the rect" do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
 
-    vp = ViewPortHelper.start(size: {64, 64}, scene: CapButtScene)
+    vp = ViewPortHelper.start(size: {64, 64}, scene: LinearGradientScene)
     renderer = ViewPortHelper.renderer(vp)
 
     on_exit(fn ->
@@ -1320,19 +1340,20 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
 
     {width, _height, frame} =
       wait_for_frame!(renderer, 40, fn {w, _h, data} ->
-        any_non_background?(data, w, 20..30, 26..34)
+        red_dominant?(pixel_at(data, w, 12, 20)) and
+          blue_dominant?(pixel_at(data, w, 28, 20))
       end)
 
-    # Stroke is visible along the line.
-    assert any_non_background?(frame, width, 20..30, 26..34)
-    # Butt cap does not fully cover the region past the endpoint.
-    assert count_non_background?(frame, width, 34..36, 26..34) < 15
+    # Left side is closer to red.
+    assert red_dominant?(pixel_at(frame, width, 12, 20))
+    # Right side is closer to blue.
+    assert blue_dominant?(pixel_at(frame, width, 28, 20))
   end
 
-  test "cap square extends past line endpoint" do
+  test "linear gradient stroke transitions across the line" do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
 
-    vp = ViewPortHelper.start(size: {64, 64}, scene: CapSquareScene)
+    vp = ViewPortHelper.start(size: {64, 64}, scene: LinearStrokeScene)
     renderer = ViewPortHelper.renderer(vp)
 
     on_exit(fn ->
@@ -1345,11 +1366,40 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
 
     {width, _height, frame} =
       wait_for_frame!(renderer, 40, fn {w, _h, data} ->
-        any_non_background?(data, w, 20..30, 26..34)
+        red_dominant?(pixel_at(data, w, 12, 20)) and
+          blue_dominant?(pixel_at(data, w, 28, 20))
       end)
 
-    # Square cap extends beyond the endpoint.
-    assert count_non_background?(frame, width, 34..36, 26..34) > 0
+    # Left side is closer to red.
+    assert red_dominant?(pixel_at(frame, width, 12, 20))
+    # Right side is closer to blue.
+    assert blue_dominant?(pixel_at(frame, width, 28, 20))
+  end
+
+  test "cap square extends farther than butt" do
+    assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
+
+    vp = ViewPortHelper.start(size: {64, 64}, scene: CapCompareScene)
+    renderer = ViewPortHelper.renderer(vp)
+
+    on_exit(fn ->
+      if Process.alive?(vp.pid) do
+        _ = ViewPort.stop(vp)
+      end
+
+      _ = Native.stop(renderer)
+    end)
+
+    {width, _height, frame} =
+      wait_for_frame!(renderer, 40, fn {w, _h, data} ->
+        any_non_background?(data, w, 20..30, 16..24) and
+          any_non_background?(data, w, 20..30, 36..44)
+      end)
+
+    butt_count = count_non_background?(frame, width, 34..36, 16..24)
+    square_count = count_non_background?(frame, width, 34..36, 36..44)
+
+    assert square_count > butt_count
   end
 
   defp wait_for_frame!(renderer, attempts_remaining, predicate) do
@@ -1409,4 +1459,7 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
   defp red_channel_in_range?({r, _g, _b}, min, max), do: r >= min and r <= max
 
   defp green_blue_zero?({_r, g, b}), do: g == 0 and b == 0
+
+  defp red_dominant?({r, g, b}), do: r > b and r > g
+  defp blue_dominant?({r, g, b}), do: b > r and b > g
 end

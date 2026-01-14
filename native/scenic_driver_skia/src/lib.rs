@@ -752,6 +752,59 @@ fn parse_script(script: &[u8]) -> Result<Vec<ScriptOp>, String> {
                 )));
                 rest = tail;
             }
+            0x61 => {
+                if rest.len() < 26 {
+                    return Err("fill_linear opcode truncated".to_string());
+                }
+                let (_reserved, tail) = rest.split_at(2);
+                let (start_x_bytes, tail) = tail.split_at(4);
+                let (start_y_bytes, tail) = tail.split_at(4);
+                let (end_x_bytes, tail) = tail.split_at(4);
+                let (end_y_bytes, tail) = tail.split_at(4);
+                let (start_rgba, tail) = tail.split_at(4);
+                let (end_rgba, tail) = tail.split_at(4);
+                let start_x = f32::from_bits(u32::from_be_bytes([
+                    start_x_bytes[0],
+                    start_x_bytes[1],
+                    start_x_bytes[2],
+                    start_x_bytes[3],
+                ]));
+                let start_y = f32::from_bits(u32::from_be_bytes([
+                    start_y_bytes[0],
+                    start_y_bytes[1],
+                    start_y_bytes[2],
+                    start_y_bytes[3],
+                ]));
+                let end_x = f32::from_bits(u32::from_be_bytes([
+                    end_x_bytes[0],
+                    end_x_bytes[1],
+                    end_x_bytes[2],
+                    end_x_bytes[3],
+                ]));
+                let end_y = f32::from_bits(u32::from_be_bytes([
+                    end_y_bytes[0],
+                    end_y_bytes[1],
+                    end_y_bytes[2],
+                    end_y_bytes[3],
+                ]));
+                let start_color = skia_safe::Color::from_argb(
+                    start_rgba[3],
+                    start_rgba[0],
+                    start_rgba[1],
+                    start_rgba[2],
+                );
+                let end_color =
+                    skia_safe::Color::from_argb(end_rgba[3], end_rgba[0], end_rgba[1], end_rgba[2]);
+                ops.push(ScriptOp::FillLinear {
+                    start_x,
+                    start_y,
+                    end_x,
+                    end_y,
+                    start_color,
+                    end_color,
+                });
+                rest = tail;
+            }
             0x50 => {
                 if rest.len() < 26 {
                     return Err("transform opcode truncated".to_string());
@@ -1233,6 +1286,59 @@ fn parse_script(script: &[u8]) -> Result<Vec<ScriptOp>, String> {
                 ops.push(ScriptOp::StrokeColor(skia_safe::Color::from_argb(
                     rgba[3], rgba[0], rgba[1], rgba[2],
                 )));
+                rest = tail;
+            }
+            0x72 => {
+                if rest.len() < 26 {
+                    return Err("stroke_linear opcode truncated".to_string());
+                }
+                let (_reserved, tail) = rest.split_at(2);
+                let (start_x_bytes, tail) = tail.split_at(4);
+                let (start_y_bytes, tail) = tail.split_at(4);
+                let (end_x_bytes, tail) = tail.split_at(4);
+                let (end_y_bytes, tail) = tail.split_at(4);
+                let (start_rgba, tail) = tail.split_at(4);
+                let (end_rgba, tail) = tail.split_at(4);
+                let start_x = f32::from_bits(u32::from_be_bytes([
+                    start_x_bytes[0],
+                    start_x_bytes[1],
+                    start_x_bytes[2],
+                    start_x_bytes[3],
+                ]));
+                let start_y = f32::from_bits(u32::from_be_bytes([
+                    start_y_bytes[0],
+                    start_y_bytes[1],
+                    start_y_bytes[2],
+                    start_y_bytes[3],
+                ]));
+                let end_x = f32::from_bits(u32::from_be_bytes([
+                    end_x_bytes[0],
+                    end_x_bytes[1],
+                    end_x_bytes[2],
+                    end_x_bytes[3],
+                ]));
+                let end_y = f32::from_bits(u32::from_be_bytes([
+                    end_y_bytes[0],
+                    end_y_bytes[1],
+                    end_y_bytes[2],
+                    end_y_bytes[3],
+                ]));
+                let start_color = skia_safe::Color::from_argb(
+                    start_rgba[3],
+                    start_rgba[0],
+                    start_rgba[1],
+                    start_rgba[2],
+                );
+                let end_color =
+                    skia_safe::Color::from_argb(end_rgba[3], end_rgba[0], end_rgba[1], end_rgba[2]);
+                ops.push(ScriptOp::StrokeLinear {
+                    start_x,
+                    start_y,
+                    end_x,
+                    end_y,
+                    start_color,
+                    end_color,
+                });
                 rest = tail;
             }
             0x80 => {
@@ -1721,6 +1827,46 @@ mod tests {
                 ScriptOp::Scissor {
                     width: 30.0,
                     height: 40.0
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_linear_gradients() {
+        let mut script: Vec<u8> = Vec::new();
+        script.extend_from_slice(&[0x00, 0x61, 0x00, 0x00]);
+        push_f32(&mut script, 1.0);
+        push_f32(&mut script, 2.0);
+        push_f32(&mut script, 3.0);
+        push_f32(&mut script, 4.0);
+        script.extend_from_slice(&[10, 20, 30, 40, 50, 60, 70, 80]);
+        script.extend_from_slice(&[0x00, 0x72, 0x00, 0x00]);
+        push_f32(&mut script, 5.0);
+        push_f32(&mut script, 6.0);
+        push_f32(&mut script, 7.0);
+        push_f32(&mut script, 8.0);
+        script.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
+
+        let ops = parse_script(&script).expect("parse_script failed");
+        assert_eq!(
+            ops,
+            vec![
+                ScriptOp::FillLinear {
+                    start_x: 1.0,
+                    start_y: 2.0,
+                    end_x: 3.0,
+                    end_y: 4.0,
+                    start_color: skia_safe::Color::from_argb(40, 10, 20, 30),
+                    end_color: skia_safe::Color::from_argb(80, 50, 60, 70),
+                },
+                ScriptOp::StrokeLinear {
+                    start_x: 5.0,
+                    start_y: 6.0,
+                    end_x: 7.0,
+                    end_y: 8.0,
+                    start_color: skia_safe::Color::from_argb(4, 1, 2, 3),
+                    end_color: skia_safe::Color::from_argb(8, 5, 6, 7),
                 }
             ]
         );
