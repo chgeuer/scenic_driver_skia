@@ -9,7 +9,7 @@ mod renderer;
 
 use std::collections::HashMap;
 use std::sync::{
-    Arc, Mutex, OnceLock,
+    Arc, Mutex,
     atomic::{AtomicBool, AtomicU32, Ordering},
     mpsc,
 };
@@ -20,7 +20,7 @@ use backend::UserEvent;
 use cursor::CursorState;
 use input::{InputEvent, InputQueue, notify_input_ready};
 use renderer::{RenderState, ScriptOp};
-use rustler::{Binary, Env, OwnedBinary};
+use rustler::{Binary, Env, OwnedBinary, ResourceArc, Term};
 
 enum StopSignal {
     Wayland(winit::event_loop::EventLoopProxy<UserEvent>),
@@ -38,8 +38,14 @@ struct DriverHandle {
     dirty: Option<Arc<AtomicBool>>,
     running: Arc<AtomicBool>,
     cursor_state: Option<Arc<Mutex<CursorState>>>,
-    thread: thread::JoinHandle<()>,
+    thread: Option<thread::JoinHandle<()>>,
 }
+
+struct RendererResource {
+    handle: Mutex<DriverHandle>,
+}
+
+impl rustler::Resource for RendererResource {}
 
 pub(crate) struct RasterFrame {
     width: u32,
@@ -47,12 +53,7 @@ pub(crate) struct RasterFrame {
     data: Vec<u8>,
 }
 
-static DRIVER: OnceLock<Mutex<Option<DriverHandle>>> = OnceLock::new();
 const ROOT_ID: &str = "_root_";
-
-fn driver_state() -> &'static Mutex<Option<DriverHandle>> {
-    DRIVER.get_or_init(|| Mutex::new(None))
-}
 
 #[rustler::nif(schedule = "DirtyIo")]
 pub fn start(
@@ -63,35 +64,10 @@ pub fn start(
     drm_card: Option<String>,
     drm_hw_cursor: bool,
     drm_input_log: bool,
-) -> Result<(), String> {
+) -> Result<ResourceArc<RendererResource>, String> {
     let backend = backend
         .map(|b| b.to_lowercase())
         .unwrap_or_else(|| String::from("wayland"));
-
-    let mut state = driver_state()
-        .lock()
-        .map_err(|_| "driver state lock poisoned".to_string())?;
-
-    if let Some(handle) = state.as_ref() {
-        match &handle.stop {
-            StopSignal::Wayland(proxy) => {
-                if handle.running.load(Ordering::Relaxed) {
-                    return Err("renderer already running".to_string());
-                }
-                handle.running.store(true, Ordering::Relaxed);
-                let result = proxy
-                    .send_event(UserEvent::Start)
-                    .map_err(|err| format!("failed to signal renderer: {err}"));
-                if result.is_err() {
-                    handle.running.store(false, Ordering::Relaxed);
-                }
-                return result;
-            }
-            StopSignal::Drm(_) | StopSignal::Raster(_) => {
-                return Err("renderer already running".to_string());
-            }
-        }
-    }
 
     let thread_name = format!("scenic-driver-{backend}");
     let text = Arc::new(Mutex::new(String::from("Hello, Wayland")));
@@ -142,7 +118,7 @@ pub fn start(
             dirty: Some(dirty),
             running,
             cursor_state: Some(cursor_state),
-            thread,
+            thread: Some(thread),
         }
     } else if backend == "raster" {
         let stop = Arc::new(AtomicBool::new(false));
@@ -179,7 +155,7 @@ pub fn start(
             dirty: Some(dirty),
             running,
             cursor_state: None,
-            thread,
+            thread: Some(thread),
         }
     } else {
         let (proxy_tx, proxy_rx) = mpsc::channel();
@@ -223,76 +199,30 @@ pub fn start(
             dirty: None,
             running,
             cursor_state: None,
-            thread,
+            thread: Some(thread),
         }
     };
 
-    *state = Some(handle);
-
-    Ok(())
+    Ok(ResourceArc::new(RendererResource {
+        handle: Mutex::new(handle),
+    }))
 }
 
-#[rustler::nif(schedule = "DirtyIo")]
-pub fn stop() -> Result<(), String> {
-    let mut state = driver_state()
+fn with_handle<T>(
+    renderer: &RendererResource,
+    f: impl FnOnce(&mut DriverHandle) -> Result<T, String>,
+) -> Result<T, String> {
+    let mut guard = renderer
+        .handle
         .lock()
         .map_err(|_| "driver state lock poisoned".to_string())?;
-    let handle = state
-        .as_ref()
-        .ok_or_else(|| "renderer not running".to_string())?;
-
-    if !handle.running.load(Ordering::Relaxed) {
-        return Ok(());
-    }
-
-    let signal_result = match &handle.stop {
-        StopSignal::Wayland(proxy) => proxy
-            .send_event(UserEvent::Stop)
-            .map_err(|err| format!("failed to signal renderer: {err}")),
-        StopSignal::Drm(stop) => {
-            stop.store(true, Ordering::Relaxed);
-            Ok(())
-        }
-        StopSignal::Raster(stop) => {
-            stop.store(true, Ordering::Relaxed);
-            Ok(())
-        }
-    };
-    handle.running.store(false, Ordering::Relaxed);
-
-    match &handle.stop {
-        StopSignal::Wayland(_) => signal_result,
-        StopSignal::Drm(_) | StopSignal::Raster(_) => {
-            let handle = state.take().expect("handle checked");
-            handle
-                .thread
-                .join()
-                .map_err(|_| "renderer thread panicked".to_string())?;
-            signal_result
-        }
-    }
+    f(&mut guard)
 }
 
-#[rustler::nif(schedule = "DirtyIo")]
-pub fn set_text(text: String) -> Result<(), String> {
-    let state = driver_state()
-        .lock()
-        .map_err(|_| "driver state lock poisoned".to_string())?;
-    let handle = state
-        .as_ref()
-        .ok_or_else(|| "renderer not running".to_string())?;
-
-    {
-        let mut stored = handle
-            .text
-            .lock()
-            .map_err(|_| "text state lock poisoned".to_string())?;
-        *stored = text.clone();
-    }
-
+fn signal_redraw(handle: &mut DriverHandle) -> Result<(), String> {
     match &handle.stop {
         StopSignal::Wayland(proxy) => proxy
-            .send_event(UserEvent::SetText(text))
+            .send_event(UserEvent::Redraw)
             .map_err(|err| format!("failed to signal renderer: {err}")),
         StopSignal::Drm(_) | StopSignal::Raster(_) => {
             if let Some(dirty) = &handle.dirty {
@@ -303,9 +233,82 @@ pub fn set_text(text: String) -> Result<(), String> {
     }
 }
 
+fn update_render_state<F>(renderer: &RendererResource, update: F) -> Result<(), String>
+where
+    F: FnOnce(&mut RenderState) -> Result<(), String>,
+{
+    with_handle(renderer, |handle| {
+        let mut render_state = handle
+            .render_state
+            .lock()
+            .map_err(|_| "render state lock poisoned".to_string())?;
+        update(&mut render_state)?;
+        drop(render_state);
+        signal_redraw(handle)
+    })
+}
+
 #[rustler::nif(schedule = "DirtyIo")]
-pub fn reset_scene() -> Result<(), String> {
-    update_render_state(|state| {
+pub fn stop(renderer: ResourceArc<RendererResource>) -> Result<(), String> {
+    with_handle(&renderer, |handle| {
+        if !handle.running.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+
+        let signal_result = match &handle.stop {
+            StopSignal::Wayland(proxy) => proxy
+                .send_event(UserEvent::Stop)
+                .map_err(|err| format!("failed to signal renderer: {err}")),
+            StopSignal::Drm(stop) => {
+                stop.store(true, Ordering::Relaxed);
+                Ok(())
+            }
+            StopSignal::Raster(stop) => {
+                stop.store(true, Ordering::Relaxed);
+                Ok(())
+            }
+        };
+        handle.running.store(false, Ordering::Relaxed);
+
+        let join_result = match handle.thread.take() {
+            Some(thread) => thread
+                .join()
+                .map_err(|_| "renderer thread panicked".to_string()),
+            None => Ok(()),
+        };
+
+        signal_result.and(join_result)
+    })
+}
+
+#[rustler::nif(schedule = "DirtyIo")]
+pub fn set_text(renderer: ResourceArc<RendererResource>, text: String) -> Result<(), String> {
+    with_handle(&renderer, |handle| {
+        {
+            let mut stored = handle
+                .text
+                .lock()
+                .map_err(|_| "text state lock poisoned".to_string())?;
+            *stored = text.clone();
+        }
+
+        match &handle.stop {
+            StopSignal::Wayland(proxy) => proxy
+                .send_event(UserEvent::SetText(text))
+                .map_err(|err| format!("failed to signal renderer: {err}")),
+            StopSignal::Drm(_) | StopSignal::Raster(_) => {
+                if let Some(dirty) = &handle.dirty {
+                    dirty.store(true, Ordering::Relaxed);
+                }
+                Ok(())
+            }
+        }
+    })
+}
+
+#[rustler::nif(schedule = "DirtyIo")]
+pub fn reset_scene(renderer: ResourceArc<RendererResource>) -> Result<(), String> {
+    update_render_state(&renderer, |state| {
         state.scripts = HashMap::new();
         state.root_id = None;
         Ok(())
@@ -313,16 +316,22 @@ pub fn reset_scene() -> Result<(), String> {
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
-pub fn set_clear_color(color: (u8, u8, u8, u8)) -> Result<(), String> {
-    update_render_state(|state| {
+pub fn set_clear_color(
+    renderer: ResourceArc<RendererResource>,
+    color: (u8, u8, u8, u8),
+) -> Result<(), String> {
+    update_render_state(&renderer, |state| {
         state.clear_color = skia_safe::Color::from_argb(color.3, color.0, color.1, color.2);
         Ok(())
     })
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
-pub fn submit_script(script: rustler::Binary) -> Result<(), String> {
-    update_render_state(|state| {
+pub fn submit_script(
+    renderer: ResourceArc<RendererResource>,
+    script: rustler::Binary,
+) -> Result<(), String> {
+    update_render_state(&renderer, |state| {
         let ops = parse_script(script.as_slice())?;
         set_script(state, ROOT_ID.to_string(), ops);
         Ok(())
@@ -330,8 +339,12 @@ pub fn submit_script(script: rustler::Binary) -> Result<(), String> {
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
-pub fn submit_script_with_id(id: String, script: rustler::Binary) -> Result<(), String> {
-    update_render_state(|state| {
+pub fn submit_script_with_id(
+    renderer: ResourceArc<RendererResource>,
+    id: String,
+    script: rustler::Binary,
+) -> Result<(), String> {
+    update_render_state(&renderer, |state| {
         let ops = parse_script(script.as_slice())?;
         set_script(state, id.clone(), ops);
         Ok(())
@@ -339,8 +352,11 @@ pub fn submit_script_with_id(id: String, script: rustler::Binary) -> Result<(), 
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
-pub fn submit_scripts(scripts: Vec<(String, rustler::Binary)>) -> Result<(), String> {
-    update_render_state(|state| {
+pub fn submit_scripts(
+    renderer: ResourceArc<RendererResource>,
+    scripts: Vec<(String, rustler::Binary)>,
+) -> Result<(), String> {
+    update_render_state(&renderer, |state| {
         let mut staged: Vec<(String, Vec<ScriptOp>)> = Vec::with_capacity(scripts.len());
         for (id, script) in scripts.iter() {
             let ops = parse_script(script.as_slice())?;
@@ -354,8 +370,8 @@ pub fn submit_scripts(scripts: Vec<(String, rustler::Binary)>) -> Result<(), Str
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
-pub fn del_script(id: String) -> Result<(), String> {
-    update_render_state(|state| {
+pub fn del_script(renderer: ResourceArc<RendererResource>, id: String) -> Result<(), String> {
+    update_render_state(&renderer, |state| {
         state.scripts.remove(&id);
         if state.root_id.as_deref() == Some(id.as_str()) {
             state.root_id = None;
@@ -365,159 +381,109 @@ pub fn del_script(id: String) -> Result<(), String> {
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
-pub fn script_count() -> Result<u64, String> {
-    let state = driver_state()
-        .lock()
-        .map_err(|_| "driver state lock poisoned".to_string())?;
-    let handle = state
-        .as_ref()
-        .ok_or_else(|| "renderer not running".to_string())?;
-    let render_state = handle
-        .render_state
-        .lock()
-        .map_err(|_| "render state lock poisoned".to_string())?;
-    Ok(render_state.scripts.len() as u64)
+pub fn script_count(renderer: ResourceArc<RendererResource>) -> Result<u64, String> {
+    with_handle(&renderer, |handle| {
+        let render_state = handle
+            .render_state
+            .lock()
+            .map_err(|_| "render state lock poisoned".to_string())?;
+        Ok(render_state.scripts.len() as u64)
+    })
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
-pub fn get_raster_frame<'a>(env: Env<'a>) -> Result<(u32, u32, Binary<'a>), String> {
-    let state = driver_state()
-        .lock()
-        .map_err(|_| "driver state lock poisoned".to_string())?;
-    let handle = state
-        .as_ref()
-        .ok_or_else(|| "renderer not running".to_string())?;
-    let frame_slot = handle
-        .raster_frame
-        .as_ref()
-        .ok_or_else(|| "raster backend not active".to_string())?;
-    let frame_guard = frame_slot
-        .lock()
-        .map_err(|_| "raster frame lock poisoned".to_string())?;
-    let frame = frame_guard
-        .as_ref()
-        .ok_or_else(|| "raster frame not available".to_string())?;
-    let mut binary = OwnedBinary::new(frame.data.len())
-        .ok_or_else(|| "failed to allocate raster frame binary".to_string())?;
-    binary.as_mut_slice().copy_from_slice(&frame.data);
-    Ok((frame.width, frame.height, Binary::from_owned(binary, env)))
+pub fn get_raster_frame<'a>(
+    env: Env<'a>,
+    renderer: ResourceArc<RendererResource>,
+) -> Result<(u32, u32, Binary<'a>), String> {
+    with_handle(&renderer, |handle| {
+        let frame_slot = handle
+            .raster_frame
+            .as_ref()
+            .ok_or_else(|| "raster backend not active".to_string())?;
+        let frame_guard = frame_slot
+            .lock()
+            .map_err(|_| "raster frame lock poisoned".to_string())?;
+        let frame = frame_guard
+            .as_ref()
+            .ok_or_else(|| "raster frame not available".to_string())?;
+        let mut binary = OwnedBinary::new(frame.data.len())
+            .ok_or_else(|| "failed to allocate raster frame binary".to_string())?;
+        binary.as_mut_slice().copy_from_slice(&frame.data);
+        Ok((frame.width, frame.height, Binary::from_owned(binary, env)))
+    })
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
-pub fn set_input_mask(mask: u32) -> Result<(), String> {
-    let state = driver_state()
-        .lock()
-        .map_err(|_| "driver state lock poisoned".to_string())?;
-    let handle = state
-        .as_ref()
-        .ok_or_else(|| "renderer not running".to_string())?;
-
-    handle.input_mask.store(mask, Ordering::Relaxed);
-
-    Ok(())
+pub fn set_input_mask(renderer: ResourceArc<RendererResource>, mask: u32) -> Result<(), String> {
+    with_handle(&renderer, |handle| {
+        handle.input_mask.store(mask, Ordering::Relaxed);
+        Ok(())
+    })
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
-pub fn show_cursor() -> Result<(), String> {
-    set_cursor_visible(true)
+pub fn show_cursor(renderer: ResourceArc<RendererResource>) -> Result<(), String> {
+    set_cursor_visible(&renderer, true)
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
-pub fn hide_cursor() -> Result<(), String> {
-    set_cursor_visible(false)
+pub fn hide_cursor(renderer: ResourceArc<RendererResource>) -> Result<(), String> {
+    set_cursor_visible(&renderer, false)
 }
 
-fn set_cursor_visible(visible: bool) -> Result<(), String> {
-    let state = driver_state()
-        .lock()
-        .map_err(|_| "driver state lock poisoned".to_string())?;
-    let handle = state
-        .as_ref()
-        .ok_or_else(|| "renderer not running".to_string())?;
-
-    if let Some(cursor_state) = &handle.cursor_state
-        && let Ok(mut cursor) = cursor_state.lock()
-    {
-        cursor.visible = visible;
-    }
-
-    if let Some(dirty) = &handle.dirty {
-        dirty.store(true, Ordering::Relaxed);
-    }
-
-    Ok(())
-}
-
-#[rustler::nif(schedule = "DirtyIo")]
-pub fn set_input_target(pid: Option<rustler::LocalPid>) -> Result<(), String> {
-    let state = driver_state()
-        .lock()
-        .map_err(|_| "driver state lock poisoned".to_string())?;
-    let handle = state
-        .as_ref()
-        .ok_or_else(|| "renderer not running".to_string())?;
-    let mut queue = handle
-        .input_events
-        .lock()
-        .map_err(|_| "input queue lock poisoned".to_string())?;
-    let notify = queue.set_target(pid);
-    drop(queue);
-
-    if let Some(pid) = notify {
-        notify_input_ready(pid);
-    }
-
-    Ok(())
-}
-
-#[rustler::nif(schedule = "DirtyIo")]
-pub fn drain_input_events() -> Result<Vec<InputEvent>, String> {
-    drain_input_events_inner()
-}
-
-fn drain_input_events_inner() -> Result<Vec<InputEvent>, String> {
-    let state = driver_state()
-        .lock()
-        .map_err(|_| "driver state lock poisoned".to_string())?;
-    let handle = state
-        .as_ref()
-        .ok_or_else(|| "renderer not running".to_string())?;
-    let mut queue = handle
-        .input_events
-        .lock()
-        .map_err(|_| "input queue lock poisoned".to_string())?;
-    Ok(queue.drain())
-}
-
-fn update_render_state<F>(mut update: F) -> Result<(), String>
-where
-    F: FnMut(&mut RenderState) -> Result<(), String>,
-{
-    let state = driver_state()
-        .lock()
-        .map_err(|_| "driver state lock poisoned".to_string())?;
-    let handle = state
-        .as_ref()
-        .ok_or_else(|| "renderer not running".to_string())?;
-
-    let mut render_state = handle
-        .render_state
-        .lock()
-        .map_err(|_| "render state lock poisoned".to_string())?;
-    update(&mut render_state)?;
-    drop(render_state);
-
-    match &handle.stop {
-        StopSignal::Wayland(proxy) => proxy
-            .send_event(UserEvent::Redraw)
-            .map_err(|err| format!("failed to signal renderer: {err}")),
-        StopSignal::Drm(_) | StopSignal::Raster(_) => {
-            if let Some(dirty) = &handle.dirty {
-                dirty.store(true, Ordering::Relaxed);
-            }
-            Ok(())
+fn set_cursor_visible(renderer: &RendererResource, visible: bool) -> Result<(), String> {
+    with_handle(renderer, |handle| {
+        if let Some(cursor_state) = &handle.cursor_state
+            && let Ok(mut cursor) = cursor_state.lock()
+        {
+            cursor.visible = visible;
         }
-    }
+
+        if let Some(dirty) = &handle.dirty {
+            dirty.store(true, Ordering::Relaxed);
+        }
+
+        Ok(())
+    })
+}
+
+#[rustler::nif(schedule = "DirtyIo")]
+pub fn set_input_target(
+    renderer: ResourceArc<RendererResource>,
+    pid: Option<rustler::LocalPid>,
+) -> Result<(), String> {
+    with_handle(&renderer, |handle| {
+        let mut queue = handle
+            .input_events
+            .lock()
+            .map_err(|_| "input queue lock poisoned".to_string())?;
+        let notify = queue.set_target(pid);
+        drop(queue);
+
+        if let Some(pid) = notify {
+            notify_input_ready(pid);
+        }
+
+        Ok(())
+    })
+}
+
+#[rustler::nif(schedule = "DirtyIo")]
+pub fn drain_input_events(
+    renderer: ResourceArc<RendererResource>,
+) -> Result<Vec<InputEvent>, String> {
+    drain_input_events_inner(&renderer)
+}
+
+fn drain_input_events_inner(renderer: &RendererResource) -> Result<Vec<InputEvent>, String> {
+    with_handle(renderer, |handle| {
+        let mut queue = handle
+            .input_events
+            .lock()
+            .map_err(|_| "input queue lock poisoned".to_string())?;
+        Ok(queue.drain())
+    })
 }
 
 fn set_script(state: &mut RenderState, id: String, ops: Vec<ScriptOp>) {
@@ -1130,7 +1096,11 @@ fn parse_script(script: &[u8]) -> Result<Vec<ScriptOp>, String> {
     Ok(ops)
 }
 
-rustler::init!("Elixir.Scenic.Driver.Skia.Native");
+fn load(env: Env, _info: Term) -> bool {
+    env.register::<RendererResource>().is_ok()
+}
+
+rustler::init!("Elixir.Scenic.Driver.Skia.Native", load = load);
 
 #[cfg(test)]
 mod tests {
@@ -1346,7 +1316,6 @@ mod tests {
 
     #[test]
     fn drain_input_events_returns_queued_events() {
-        let mut state = driver_state().lock().expect("driver state lock");
         let stop = Arc::new(AtomicBool::new(false));
         let thread = thread::spawn(|| {});
         let mut queue = InputQueue::new();
@@ -1362,7 +1331,7 @@ mod tests {
         });
         let input_events = Arc::new(Mutex::new(queue));
 
-        *state = Some(DriverHandle {
+        let handle = DriverHandle {
             stop: StopSignal::Raster(Arc::clone(&stop)),
             text: Arc::new(Mutex::new(String::new())),
             render_state: Arc::new(Mutex::new(RenderState::default())),
@@ -1372,20 +1341,17 @@ mod tests {
             dirty: Some(Arc::new(AtomicBool::new(false))),
             running: Arc::new(AtomicBool::new(false)),
             cursor_state: None,
-            thread,
-        });
+            thread: Some(thread),
+        };
+        let renderer = RendererResource {
+            handle: Mutex::new(handle),
+        };
 
-        drop(state);
-        let drained = drain_input_events_inner().expect("drain_input_events failed");
+        let drained = drain_input_events_inner(&renderer).expect("drain_input_events failed");
         assert_eq!(drained.len(), 3);
         assert!(matches!(drained[0], InputEvent::CursorPos { .. }));
         assert!(matches!(drained[1], InputEvent::Key { .. }));
         assert!(matches!(drained[2], InputEvent::ViewportReshape { .. }));
-
-        let mut state = driver_state().lock().expect("driver state lock");
-        if let Some(handle) = state.take() {
-            let _ = handle.thread.join();
-        }
     }
 
     #[test]

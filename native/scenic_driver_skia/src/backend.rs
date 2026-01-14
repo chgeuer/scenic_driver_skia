@@ -44,7 +44,6 @@ use crate::renderer::{RenderState, Renderer};
 pub enum UserEvent {
     Stop,
     SetText(String),
-    Start,
     Redraw,
 }
 
@@ -544,7 +543,6 @@ impl ApplicationHandler<UserEvent> for App {
     fn user_event(&mut self, event_loop: &winit::event_loop::ActiveEventLoop, event: UserEvent) {
         match event {
             UserEvent::Stop => self.set_running(event_loop, false),
-            UserEvent::Start => self.set_running(event_loop, true),
             UserEvent::SetText(text) => {
                 self.current_text = text.clone();
                 if let Some(renderer) = self.renderer.as_mut() {

@@ -80,13 +80,16 @@ defmodule Scenic.Driver.Skia do
            drm_hw_cursor,
            drm_input_log
          ) do
-      :ok ->
-        maybe_set_input_target(self())
-        {:ok, assign(driver, opts: opts, update_count: 0, input_mask: 0)}
+      {:ok, renderer} ->
+        maybe_set_input_target(renderer, self())
 
-      {:ok, _} ->
-        maybe_set_input_target(self())
-        {:ok, assign(driver, opts: opts, update_count: 0, input_mask: 0)}
+        {:ok,
+         assign(driver,
+           opts: opts,
+           update_count: 0,
+           input_mask: 0,
+           renderer: renderer
+         )}
 
       {:error, reason} ->
         {:stop, reason}
@@ -99,7 +102,7 @@ defmodule Scenic.Driver.Skia do
   @impl Scenic.Driver
   def reset_scene(driver) do
     Logger.debug("Scenic.Driver.Skia reset_scene")
-    _ = Native.reset_scene()
+    _ = Native.reset_scene(driver.assigns.renderer)
     {:ok, driver}
   end
 
@@ -107,7 +110,7 @@ defmodule Scenic.Driver.Skia do
   def request_input(input, driver) do
     mask = input_mask_from_request(input)
 
-    case Native.set_input_mask(mask) do
+    case Native.set_input_mask(driver.assigns.renderer, mask) do
       :ok -> :ok
       {:ok, _} -> :ok
       {:error, reason} -> Logger.warning("set_input_mask failed: #{inspect(reason)}")
@@ -115,9 +118,9 @@ defmodule Scenic.Driver.Skia do
     end
 
     if mask == 0 do
-      maybe_set_input_target(nil)
+      maybe_set_input_target(driver.assigns.renderer, nil)
     else
-      maybe_set_input_target(self())
+      maybe_set_input_target(driver.assigns.renderer, self())
     end
 
     {:ok, assign(driver, :input_mask, mask)}
@@ -126,7 +129,7 @@ defmodule Scenic.Driver.Skia do
   @impl GenServer
   def handle_info(:input_ready, driver) do
     events =
-      case Native.drain_input_events() do
+      case Native.drain_input_events(driver.assigns.renderer) do
         {:ok, list} when is_list(list) ->
           list
 
@@ -148,6 +151,11 @@ defmodule Scenic.Driver.Skia do
       end)
 
     {:noreply, driver}
+  end
+
+  @impl GenServer
+  def handle_call(:renderer_handle, _from, driver) do
+    {:reply, driver.assigns.renderer, driver}
   end
 
   @impl Scenic.Driver
@@ -175,7 +183,7 @@ defmodule Scenic.Driver.Skia do
         :ok
 
       _ ->
-        Native.submit_scripts(updates)
+        Native.submit_scripts(driver.assigns.renderer, updates)
         |> case do
           :ok -> :ok
           {:ok, _} -> :ok
@@ -197,7 +205,7 @@ defmodule Scenic.Driver.Skia do
   @impl Scenic.Driver
   def del_scripts(script_ids, driver) do
     Logger.debug("Scenic.Driver.Skia del_scripts: #{inspect(script_ids)}")
-    Enum.each(script_ids, &Native.del_script(to_string(&1)))
+    Enum.each(script_ids, &Native.del_script(driver.assigns.renderer, to_string(&1)))
     {:ok, driver}
   end
 
@@ -205,13 +213,13 @@ defmodule Scenic.Driver.Skia do
   def clear_color(color, driver) do
     Logger.debug("Scenic.Driver.Skia clear_color: #{inspect(color)}")
     {:color_rgba, {r, g, b, a}} = Scenic.Color.to_rgba(color)
-    _ = Native.set_clear_color({r, g, b, a})
+    _ = Native.set_clear_color(driver.assigns.renderer, {r, g, b, a})
     {:ok, driver}
   end
 
   @impl GenServer
-  def terminate(_reason, _driver) do
-    _ = Native.stop()
+  def terminate(_reason, driver) do
+    _ = Native.stop(driver.assigns.renderer)
     :ok
   end
 
@@ -219,57 +227,70 @@ defmodule Scenic.Driver.Skia do
   Start the renderer manually with the provided backend.
 
   This bypasses the Scenic ViewPort lifecycle and is intended for demos/tests.
-  Accepts `:wayland` or `:drm`.
+  Accepts `:wayland` or `:drm` and returns a renderer handle.
   """
-  @spec start() :: :ok | {:error, term()}
+  @spec start() :: {:ok, term()} | {:error, term()}
   def start, do: start(:wayland)
 
   @doc """
   Start the renderer manually with the provided backend.
 
   This bypasses the Scenic ViewPort lifecycle and is intended for demos/tests.
-  Accepts `:wayland` or `:drm`.
+  Accepts `:wayland` or `:drm` and returns a renderer handle.
   """
-  @spec start(:wayland | :drm | String.t()) :: :ok | {:error, term()}
+  @spec start(:wayland | :drm | String.t()) :: {:ok, term()} | {:error, term()}
   def start(backend) when is_atom(backend) or is_binary(backend) do
     backend
     |> normalize_backend()
     |> Native.start(nil, "Scenic Window", false, nil, true, false)
-    |> normalize_start_result()
   end
 
   @doc """
   Stop the renderer if it is running.
+
+  Accepts a renderer handle returned by `start/0` or `start/1`.
   """
-  @spec stop() :: :ok | {:error, term()}
-  def stop do
-    Native.stop()
+  @spec stop(term()) :: :ok | {:error, term()}
+  def stop(renderer) do
+    Native.stop(renderer)
   end
 
   @doc """
   Show the cursor when using the DRM backend.
+
+  Accepts a renderer handle returned by `start/0` or `start/1`.
   """
-  @spec show_cursor() :: :ok | {:error, term()}
-  def show_cursor do
-    Native.show_cursor()
+  @spec show_cursor(term()) :: :ok | {:error, term()}
+  def show_cursor(renderer) do
+    Native.show_cursor(renderer)
     |> normalize_start_result()
   end
 
   @doc """
   Hide the cursor when using the DRM backend.
+
+  Accepts a renderer handle returned by `start/0` or `start/1`.
   """
-  @spec hide_cursor() :: :ok | {:error, term()}
-  def hide_cursor do
-    Native.hide_cursor()
+  @spec hide_cursor(term()) :: :ok | {:error, term()}
+  def hide_cursor(renderer) do
+    Native.hide_cursor(renderer)
     |> normalize_start_result()
   end
 
   @doc """
   Update the text rendered by the driver.
+
+  Accepts a renderer handle returned by `start/0` or `start/1`.
   """
-  @spec set_text(String.t()) :: :ok | {:error, term()}
-  def set_text(text) when is_binary(text) do
-    Native.set_text(text)
+  @spec set_text(term(), String.t()) :: :ok | {:error, term()}
+  def set_text(renderer, text) when is_binary(text) do
+    Native.set_text(renderer, text)
+  end
+
+  @doc false
+  @spec renderer_handle(GenServer.server()) :: term()
+  def renderer_handle(driver_pid) do
+    GenServer.call(driver_pid, :renderer_handle)
   end
 
   defp normalize_backend(backend) do
@@ -299,8 +320,8 @@ defmodule Scenic.Driver.Skia do
   defp normalize_start_result({:error, _} = error), do: error
   defp normalize_start_result(other), do: {:error, {:unexpected_result, other}}
 
-  defp maybe_set_input_target(pid) do
-    case Native.set_input_target(pid) do
+  defp maybe_set_input_target(renderer, pid) do
+    case Native.set_input_target(renderer, pid) do
       :ok -> :ok
       {:ok, _} -> :ok
       {:error, reason} -> Logger.warning("set_input_target failed: #{inspect(reason)}")
@@ -313,7 +334,7 @@ defmodule Scenic.Driver.Skia do
     driver = assign(driver, :update_count, count)
 
     if opts[:debug] && rem(count, 60) == 0 do
-      case Native.script_count() do
+      case Native.script_count(driver.assigns.renderer) do
         {:ok, total} ->
           Logger.info("Scenic.Driver.Skia cached scripts: #{total}")
 

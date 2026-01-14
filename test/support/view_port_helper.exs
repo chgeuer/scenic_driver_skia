@@ -11,7 +11,6 @@ defmodule Scenic.Driver.Skia.TestSupport.ViewPort do
 
   def start(opts \\ []) do
     ensure_viewport_supervisor()
-    ensure_renderer_stopped()
 
     scene = Keyword.get(opts, :scene, DefaultScene)
 
@@ -32,6 +31,16 @@ defmodule Scenic.Driver.Skia.TestSupport.ViewPort do
     vp
   end
 
+  def driver_pid(%ViewPort{pid: pid}) do
+    wait_for_driver(pid, 40)
+  end
+
+  def renderer(%ViewPort{} = vp) do
+    vp
+    |> driver_pid()
+    |> Scenic.Driver.Skia.renderer_handle()
+  end
+
   defp ensure_viewport_supervisor do
     case DynamicSupervisor.start_link(name: :scenic_viewports, strategy: :one_for_one) do
       {:ok, pid} ->
@@ -43,13 +52,20 @@ defmodule Scenic.Driver.Skia.TestSupport.ViewPort do
     end
   end
 
-  defp ensure_renderer_stopped do
-    case Scenic.Driver.Skia.Native.stop() do
-      :ok -> :ok
-      {:ok, _} -> :ok
-      {:error, "renderer not running"} -> :ok
-      {:error, _reason} -> :ok
-      _ -> :ok
+  defp wait_for_driver(pid, attempts_remaining) when attempts_remaining > 0 do
+    %{driver_pids: driver_pids} = :sys.get_state(pid)
+
+    case driver_pids do
+      [driver_pid | _] ->
+        driver_pid
+
+      [] ->
+        Process.sleep(50)
+        wait_for_driver(pid, attempts_remaining - 1)
     end
+  end
+
+  defp wait_for_driver(pid, _attempts_remaining) do
+    raise "failed to find driver pid for viewport #{inspect(pid)}"
   end
 end

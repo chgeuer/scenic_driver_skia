@@ -331,17 +331,18 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
 
     vp = ViewPortHelper.start(size: {64, 64}, scene: RectScene)
+    renderer = ViewPortHelper.renderer(vp)
 
     on_exit(fn ->
       if Process.alive?(vp.pid) do
         _ = ViewPort.stop(vp)
       end
 
-      _ = Native.stop()
+      _ = Native.stop(renderer)
     end)
 
     {width, _height, frame} =
-      wait_for_frame!(40, fn {w, _h, data} ->
+      wait_for_frame!(renderer, 40, fn {w, _h, data} ->
         pixel_at(data, w, 20, 20) == {255, 0, 0} and
           pixel_at(data, w, 15, 10) == {255, 255, 255}
       end)
@@ -366,17 +367,18 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
 
     vp = ViewPortHelper.start(size: {64, 64}, scene: StrokeRectScene)
+    renderer = ViewPortHelper.renderer(vp)
 
     on_exit(fn ->
       if Process.alive?(vp.pid) do
         _ = ViewPort.stop(vp)
       end
 
-      _ = Native.stop()
+      _ = Native.stop(renderer)
     end)
 
     {width, _height, frame} =
-      wait_for_frame!(40, fn {w, _h, data} ->
+      wait_for_frame!(renderer, 40, fn {w, _h, data} ->
         pixel_at(data, w, 20, 10) == {255, 255, 255} and
           pixel_at(data, w, 20, 20) == {0, 0, 0}
       end)
@@ -399,17 +401,18 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
 
     vp = ViewPortHelper.start(size: {64, 64}, scene: RRectScene)
+    renderer = ViewPortHelper.renderer(vp)
 
     on_exit(fn ->
       if Process.alive?(vp.pid) do
         _ = ViewPort.stop(vp)
       end
 
-      _ = Native.stop()
+      _ = Native.stop(renderer)
     end)
 
     {width, _height, frame} =
-      wait_for_frame!(40, fn {w, _h, data} ->
+      wait_for_frame!(renderer, 40, fn {w, _h, data} ->
         pixel_at(data, w, 20, 20) == {255, 0, 0}
       end)
 
@@ -436,17 +439,18 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
 
     vp = ViewPortHelper.start(size: {64, 64}, scene: StrokeRRectScene)
+    renderer = ViewPortHelper.renderer(vp)
 
     on_exit(fn ->
       if Process.alive?(vp.pid) do
         _ = ViewPort.stop(vp)
       end
 
-      _ = Native.stop()
+      _ = Native.stop(renderer)
     end)
 
     {width, _height, frame} =
-      wait_for_frame!(40, fn {w, _h, data} ->
+      wait_for_frame!(renderer, 40, fn {w, _h, data} ->
         pixel_at(data, w, 20, 10) == {255, 255, 255} and
           pixel_at(data, w, 20, 20) == {0, 0, 0}
       end)
@@ -474,17 +478,18 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
 
     vp = ViewPortHelper.start(size: {64, 64}, scene: RRectVScene)
+    renderer = ViewPortHelper.renderer(vp)
 
     on_exit(fn ->
       if Process.alive?(vp.pid) do
         _ = ViewPort.stop(vp)
       end
 
-      _ = Native.stop()
+      _ = Native.stop(renderer)
     end)
 
     {width, _height, frame} =
-      wait_for_frame!(40, fn {w, _h, data} ->
+      wait_for_frame!(renderer, 40, fn {w, _h, data} ->
         pixel_at(data, w, 20, 20) == {255, 0, 0} and
           pixel_at(data, w, 20, 10) == {255, 255, 255}
       end)
@@ -510,17 +515,18 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
 
     vp = ViewPortHelper.start(size: {64, 64}, scene: StrokeRRectVScene)
+    renderer = ViewPortHelper.renderer(vp)
 
     on_exit(fn ->
       if Process.alive?(vp.pid) do
         _ = ViewPort.stop(vp)
       end
 
-      _ = Native.stop()
+      _ = Native.stop(renderer)
     end)
 
     {width, _height, frame} =
-      wait_for_frame!(40, fn {w, _h, data} ->
+      wait_for_frame!(renderer, 40, fn {w, _h, data} ->
         pixel_at(data, w, 20, 10) != {0, 0, 0} and
           pixel_at(data, w, 20, 20) == {0, 0, 0}
       end)
@@ -541,21 +547,23 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     # Interior stays background without fill.
     assert pixel_at(frame, width, 20, 20) == {0, 0, 0}
   end
+
   test "draw_line renders expected pixels" do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
 
     vp = ViewPortHelper.start(size: {64, 64}, scene: LineScene)
+    renderer = ViewPortHelper.renderer(vp)
 
     on_exit(fn ->
       if Process.alive?(vp.pid) do
         _ = ViewPort.stop(vp)
       end
 
-      _ = Native.stop()
+      _ = Native.stop(renderer)
     end)
 
     {width, _height, frame} =
-      wait_for_frame!(40, fn {w, _h, data} ->
+      wait_for_frame!(renderer, 40, fn {w, _h, data} ->
         pixel_at(data, w, 25, 50) != {0, 0, 0} and
           pixel_at(data, w, 25, 35) == {0, 0, 0}
       end)
@@ -574,17 +582,18 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
 
     vp = ViewPortHelper.start(size: {64, 64}, scene: CircleScene)
+    renderer = ViewPortHelper.renderer(vp)
 
     on_exit(fn ->
       if Process.alive?(vp.pid) do
         _ = ViewPort.stop(vp)
       end
 
-      _ = Native.stop()
+      _ = Native.stop(renderer)
     end)
 
     {width, _height, frame} =
-      wait_for_frame!(40, fn {w, _h, data} ->
+      wait_for_frame!(renderer, 40, fn {w, _h, data} ->
         pixel_at(data, w, 20, 20) == {255, 0, 0} and
           pixel_at(data, w, 28, 20) != {0, 0, 0}
       end)
@@ -607,17 +616,18 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
 
     vp = ViewPortHelper.start(size: {64, 64}, scene: StrokeCircleScene)
+    renderer = ViewPortHelper.renderer(vp)
 
     on_exit(fn ->
       if Process.alive?(vp.pid) do
         _ = ViewPort.stop(vp)
       end
 
-      _ = Native.stop()
+      _ = Native.stop(renderer)
     end)
 
     {width, _height, frame} =
-      wait_for_frame!(40, fn {w, _h, data} ->
+      wait_for_frame!(renderer, 40, fn {w, _h, data} ->
         pixel_at(data, w, 28, 20) != {0, 0, 0} and
           pixel_at(data, w, 20, 20) == {0, 0, 0}
       end)
@@ -635,21 +645,23 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     # Interior stays background without fill.
     assert pixel_at(frame, width, 20, 20) == {0, 0, 0}
   end
+
   test "draw_triangle fills expected pixels" do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
 
     vp = ViewPortHelper.start(size: {64, 64}, scene: TriangleScene)
+    renderer = ViewPortHelper.renderer(vp)
 
     on_exit(fn ->
       if Process.alive?(vp.pid) do
         _ = ViewPort.stop(vp)
       end
 
-      _ = Native.stop()
+      _ = Native.stop(renderer)
     end)
 
     {width, _height, frame} =
-      wait_for_frame!(40, fn {w, _h, data} ->
+      wait_for_frame!(renderer, 40, fn {w, _h, data} ->
         pixel_at(data, w, 15, 15) == {255, 0, 0} and
           pixel_at(data, w, 22, 18) != {0, 0, 0} and
           pixel_at(data, w, 25, 25) == {0, 0, 0}
@@ -674,17 +686,18 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
 
     vp = ViewPortHelper.start(size: {64, 64}, scene: StrokeTriangleScene)
+    renderer = ViewPortHelper.renderer(vp)
 
     on_exit(fn ->
       if Process.alive?(vp.pid) do
         _ = ViewPort.stop(vp)
       end
 
-      _ = Native.stop()
+      _ = Native.stop(renderer)
     end)
 
     {width, _height, frame} =
-      wait_for_frame!(40, fn {w, _h, data} ->
+      wait_for_frame!(renderer, 40, fn {w, _h, data} ->
         pixel_at(data, w, 14, 10) == {255, 255, 255} and
           pixel_at(data, w, 13, 13) == {0, 0, 0}
       end)
@@ -701,21 +714,23 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     # Interior stays background without fill.
     assert pixel_at(frame, width, 13, 13) == {0, 0, 0}
   end
+
   test "draw_ellipse fills expected pixels" do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
 
     vp = ViewPortHelper.start(size: {64, 64}, scene: EllipseScene)
+    renderer = ViewPortHelper.renderer(vp)
 
     on_exit(fn ->
       if Process.alive?(vp.pid) do
         _ = ViewPort.stop(vp)
       end
 
-      _ = Native.stop()
+      _ = Native.stop(renderer)
     end)
 
     {width, _height, frame} =
-      wait_for_frame!(40, fn {w, _h, data} ->
+      wait_for_frame!(renderer, 40, fn {w, _h, data} ->
         red_pixel?(pixel_at(data, w, 20, 20)) and
           pixel_at(data, w, 28, 20) != {0, 0, 0}
       end)
@@ -738,17 +753,18 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
 
     vp = ViewPortHelper.start(size: {64, 64}, scene: StrokeEllipseScene)
+    renderer = ViewPortHelper.renderer(vp)
 
     on_exit(fn ->
       if Process.alive?(vp.pid) do
         _ = ViewPort.stop(vp)
       end
 
-      _ = Native.stop()
+      _ = Native.stop(renderer)
     end)
 
     {width, _height, frame} =
-      wait_for_frame!(40, fn {w, _h, data} ->
+      wait_for_frame!(renderer, 40, fn {w, _h, data} ->
         pixel_at(data, w, 28, 20) != {0, 0, 0} and
           pixel_at(data, w, 20, 20) == {0, 0, 0}
       end)
@@ -766,21 +782,23 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     # Interior stays background without fill.
     assert pixel_at(frame, width, 20, 20) == {0, 0, 0}
   end
+
   test "draw_arc renders expected pixels" do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
 
     vp = ViewPortHelper.start(size: {64, 64}, scene: ArcScene)
+    renderer = ViewPortHelper.renderer(vp)
 
     on_exit(fn ->
       if Process.alive?(vp.pid) do
         _ = ViewPort.stop(vp)
       end
 
-      _ = Native.stop()
+      _ = Native.stop(renderer)
     end)
 
     {width, _height, frame} =
-      wait_for_frame!(40, fn {w, _h, data} ->
+      wait_for_frame!(renderer, 40, fn {w, _h, data} ->
         pixel_at(data, w, 32, 20) != {0, 0, 0} and
           pixel_at(data, w, 20, 20) == {0, 0, 0}
       end)
@@ -802,17 +820,18 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
 
     vp = ViewPortHelper.start(size: {64, 64}, scene: StrokeArcScene)
+    renderer = ViewPortHelper.renderer(vp)
 
     on_exit(fn ->
       if Process.alive?(vp.pid) do
         _ = ViewPort.stop(vp)
       end
 
-      _ = Native.stop()
+      _ = Native.stop(renderer)
     end)
 
     {width, _height, frame} =
-      wait_for_frame!(40, fn {w, _h, data} ->
+      wait_for_frame!(renderer, 40, fn {w, _h, data} ->
         pixel_at(data, w, 32, 20) != {0, 0, 0} and
           pixel_at(data, w, 20, 20) == {0, 0, 0}
       end)
@@ -829,21 +848,23 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     assert pixel_at(frame, width, 20, 32) != {0, 0, 0}
     assert pixel_at(frame, width, 20, 20) == {0, 0, 0}
   end
+
   test "draw_sector fills expected pixels" do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
 
     vp = ViewPortHelper.start(size: {64, 64}, scene: SectorScene)
+    renderer = ViewPortHelper.renderer(vp)
 
     on_exit(fn ->
       if Process.alive?(vp.pid) do
         _ = ViewPort.stop(vp)
       end
 
-      _ = Native.stop()
+      _ = Native.stop(renderer)
     end)
 
     {width, _height, frame} =
-      wait_for_frame!(40, fn {w, _h, data} ->
+      wait_for_frame!(renderer, 40, fn {w, _h, data} ->
         red_pixel?(pixel_at(data, w, 24, 24)) and
           pixel_at(data, w, 32, 20) != {0, 0, 0}
       end)
@@ -869,17 +890,18 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
 
     vp = ViewPortHelper.start(size: {64, 64}, scene: StrokeSectorScene)
+    renderer = ViewPortHelper.renderer(vp)
 
     on_exit(fn ->
       if Process.alive?(vp.pid) do
         _ = ViewPort.stop(vp)
       end
 
-      _ = Native.stop()
+      _ = Native.stop(renderer)
     end)
 
     {width, _height, frame} =
-      wait_for_frame!(40, fn {w, _h, data} ->
+      wait_for_frame!(renderer, 40, fn {w, _h, data} ->
         pixel_at(data, w, 32, 20) != {0, 0, 0} and
           pixel_at(data, w, 24, 24) == {0, 0, 0}
       end)
@@ -900,21 +922,23 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     # Interior stays background without fill.
     assert pixel_at(frame, width, 24, 24) == {0, 0, 0}
   end
+
   test "draw_quad fills expected pixels" do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
 
     vp = ViewPortHelper.start(size: {64, 64}, scene: QuadScene)
+    renderer = ViewPortHelper.renderer(vp)
 
     on_exit(fn ->
       if Process.alive?(vp.pid) do
         _ = ViewPort.stop(vp)
       end
 
-      _ = Native.stop()
+      _ = Native.stop(renderer)
     end)
 
     {width, _height, frame} =
-      wait_for_frame!(40, fn {w, _h, data} ->
+      wait_for_frame!(renderer, 40, fn {w, _h, data} ->
         red_pixel?(pixel_at(data, w, 18, 20))
       end)
 
@@ -938,17 +962,18 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
 
     vp = ViewPortHelper.start(size: {64, 64}, scene: StrokeQuadScene)
+    renderer = ViewPortHelper.renderer(vp)
 
     on_exit(fn ->
       if Process.alive?(vp.pid) do
         _ = ViewPort.stop(vp)
       end
 
-      _ = Native.stop()
+      _ = Native.stop(renderer)
     end)
 
     {width, _height, frame} =
-      wait_for_frame!(40, fn {w, _h, data} ->
+      wait_for_frame!(renderer, 40, fn {w, _h, data} ->
         pixel_at(data, w, 14, 10) == {255, 255, 255} and
           pixel_at(data, w, 18, 20) == {0, 0, 0}
       end)
@@ -967,26 +992,27 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     assert pixel_at(frame, width, 18, 20) == {0, 0, 0}
   end
 
-  defp wait_for_frame!(attempts_remaining, predicate) do
-    case Native.get_raster_frame() do
+  defp wait_for_frame!(renderer, attempts_remaining, predicate) do
+    case Native.get_raster_frame(renderer) do
       {:ok, {width, height, frame}} = ok ->
         if predicate.({width, height, frame}) do
           {width, height, frame}
         else
-          retry_frame(ok, attempts_remaining, predicate)
+          retry_frame(renderer, ok, attempts_remaining, predicate)
         end
 
       other ->
-        retry_frame(other, attempts_remaining, predicate)
+        retry_frame(renderer, other, attempts_remaining, predicate)
     end
   end
 
-  defp retry_frame(_last_result, attempts_remaining, predicate) when attempts_remaining > 0 do
+  defp retry_frame(renderer, _last_result, attempts_remaining, predicate)
+       when attempts_remaining > 0 do
     Process.sleep(50)
-    wait_for_frame!(attempts_remaining - 1, predicate)
+    wait_for_frame!(renderer, attempts_remaining - 1, predicate)
   end
 
-  defp retry_frame(last_result, _attempts_remaining, _predicate) do
+  defp retry_frame(_renderer, last_result, _attempts_remaining, _predicate) do
     flunk("timed out waiting for raster frame: #{inspect(last_result)}")
   end
 

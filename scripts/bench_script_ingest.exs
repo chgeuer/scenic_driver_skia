@@ -4,18 +4,18 @@ defmodule ScenicDriverSkia.BenchScriptIngest do
   alias Scenic.Graph
   alias Scenic.Graph.Compiler
   alias Scenic.Script
-  alias ScenicDriverSkia.Native
+  alias Scenic.Driver.Skia.Native
 
   def run(opts \\ []) do
     rects = Keyword.get(opts, :rects, [50, 200, 800])
     iterations = Keyword.get(opts, :iterations, 1_000)
     warmup = Keyword.get(opts, :warmup, 100)
 
-    stop_renderer()
-    case Native.start("raster", nil, "Scenic Window", false, nil, true, false) do
-      :ok -> :ok
-      {:ok, _} -> :ok
-    end
+    renderer =
+      case Native.start("raster", nil, "Scenic Window", false, nil, true, false) do
+        {:ok, renderer} -> renderer
+        other -> raise "start returned #{inspect(other)}"
+      end
 
     try do
       Enum.each(rects, fn count ->
@@ -33,7 +33,7 @@ defmodule ScenicDriverSkia.BenchScriptIngest do
           script
           |> Script.serialize()
           |> IO.iodata_to_binary()
-          |> Native.submit_script()
+          |> Native.submit_script(renderer)
           |> case do
             :ok -> :ok
             {:ok, _} -> :ok
@@ -41,15 +41,12 @@ defmodule ScenicDriverSkia.BenchScriptIngest do
         end)
 
         run_bench("submit_script (binary)", warmup, iterations, fn ->
-          case Native.submit_script(binary) do
-            :ok -> :ok
-            {:ok, _} -> :ok
-          end
+          :ok = Native.submit_script(renderer, binary)
         end)
 
       end)
     after
-      _ = Native.stop()
+      _ = Native.stop(renderer)
     end
   end
 
@@ -73,14 +70,6 @@ defmodule ScenicDriverSkia.BenchScriptIngest do
     IO.puts("#{label}: #{Float.round(per_op, 2)} us/op (#{iterations} iters)")
   end
 
-  defp stop_renderer do
-    case Native.stop() do
-      :ok -> :ok
-      {:ok, _} -> :ok
-      {:error, _reason} -> :ok
-      _ -> :ok
-    end
-  end
 end
 
 args = System.argv()

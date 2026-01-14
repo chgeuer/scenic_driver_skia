@@ -14,47 +14,47 @@ defmodule Scenic.Driver.Skia.Native do
       do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
-  def stop, do: :erlang.nif_error(:nif_not_loaded)
+  def stop(_renderer), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
-  def set_text(_text), do: :erlang.nif_error(:nif_not_loaded)
+  def set_text(_renderer, _text), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
-  def submit_script(_script), do: :erlang.nif_error(:nif_not_loaded)
+  def submit_script(_renderer, _script), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
-  def submit_script_with_id(_id, _script), do: :erlang.nif_error(:nif_not_loaded)
+  def submit_script_with_id(_renderer, _id, _script), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
-  def submit_scripts(_scripts), do: :erlang.nif_error(:nif_not_loaded)
+  def submit_scripts(_renderer, _scripts), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
-  def del_script(_id), do: :erlang.nif_error(:nif_not_loaded)
+  def del_script(_renderer, _id), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
-  def set_clear_color(_color), do: :erlang.nif_error(:nif_not_loaded)
+  def set_clear_color(_renderer, _color), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
-  def reset_scene, do: :erlang.nif_error(:nif_not_loaded)
+  def reset_scene(_renderer), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
-  def get_raster_frame, do: :erlang.nif_error(:nif_not_loaded)
+  def get_raster_frame(_renderer), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
-  def script_count, do: :erlang.nif_error(:nif_not_loaded)
+  def script_count(_renderer), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
-  def set_input_mask(_mask), do: :erlang.nif_error(:nif_not_loaded)
+  def set_input_mask(_renderer, _mask), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
-  def drain_input_events, do: :erlang.nif_error(:nif_not_loaded)
+  def drain_input_events(_renderer), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
-  def set_input_target(_pid), do: :erlang.nif_error(:nif_not_loaded)
+  def set_input_target(_renderer, _pid), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
-  def show_cursor, do: :erlang.nif_error(:nif_not_loaded)
+  def show_cursor(_renderer), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
-  def hide_cursor, do: :erlang.nif_error(:nif_not_loaded)
+  def hide_cursor(_renderer), do: :erlang.nif_error(:nif_not_loaded)
 end
