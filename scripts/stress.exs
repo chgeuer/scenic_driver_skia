@@ -90,7 +90,7 @@ defmodule ScenicDriverSkia.Stress do
         size: {2560, 1440},
         default_scene: StressScene,
         drivers: [
-          [module: ScenicDriverSkia.Driver, name: :skia_driver, backend: backend] ++ driver_opts
+          [module: Scenic.Driver.Skia, name: :skia_driver, backend: backend] ++ driver_opts
         ]
       )
 
