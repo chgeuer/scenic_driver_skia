@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 use skia_safe::{
-    Color, ColorType, Font, FontMgr, FontStyle, Matrix, Paint, PaintStyle, PathBuilder, Point,
-    RRect, Rect, Surface, Typeface, Vector,
+    ClipOp, Color, ColorType, Font, FontMgr, FontStyle, Matrix, Paint, PaintStyle, PathBuilder,
+    Point, RRect, Rect, Surface, Typeface, Vector,
     gpu::{self, SurfaceOrigin, backend_render_targets, gl::FramebufferInfo},
 };
 
@@ -26,6 +26,10 @@ pub enum ScriptOp {
     FillColor(Color),
     StrokeColor(Color),
     StrokeWidth(f32),
+    Scissor {
+        width: f32,
+        height: f32,
+    },
     BeginPath,
     ClosePath,
     FillPath,
@@ -341,6 +345,10 @@ fn draw_script(
             ScriptOp::FillColor(color) => draw_state.fill_color = *color,
             ScriptOp::StrokeColor(color) => draw_state.stroke_color = *color,
             ScriptOp::StrokeWidth(width) => draw_state.stroke_width = *width,
+            ScriptOp::Scissor { width, height } => {
+                let rect = Rect::from_xywh(0.0, 0.0, *width, *height);
+                canvas.clip_rect(rect, ClipOp::Intersect, true);
+            }
             ScriptOp::BeginPath => draw_state.path = Some(PathBuilder::new()),
             ScriptOp::ClosePath => {
                 if let Some(path) = draw_state.path.as_mut() {

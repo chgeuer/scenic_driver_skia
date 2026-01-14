@@ -18,6 +18,7 @@ defmodule ScenicDriverSkia.DemoWayland do
       y1 = 80
       y2 = 460
       y3 = 840
+      y4 = 1180
       label_offset = 160
 
       path_commands = [
@@ -71,6 +72,12 @@ defmodule ScenicDriverSkia.DemoWayland do
         translate: {x4, y3}
       )
       |> text("path", fill: :white, translate: {x4, y3 + label_offset})
+      |> rect({200, 120},
+        fill: :red,
+        scissor: {120, 60},
+        translate: {x1, y4}
+      )
+      |> text("scissor", fill: :white, translate: {x1, y4 + label_offset})
       |> text("text", fill: :yellow, font_size: 30, translate: {x3, y3 + 70})
       |> text("text", fill: :white, translate: {x3, y3 + label_offset})
     end

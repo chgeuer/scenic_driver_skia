@@ -403,6 +403,23 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     end
   end
 
+  defmodule ScissorScene do
+    use Scenic.Scene
+    import Scenic.Primitives
+
+    def init(scene, _args, _opts) do
+      graph =
+        Scenic.Graph.build()
+        |> rect({40, 40},
+          fill: :red,
+          translate: {10, 10},
+          scissor: {20, 20}
+        )
+
+      {:ok, Scenic.Scene.push_graph(scene, graph)}
+    end
+  end
+
   defmodule StrokeQuadScene do
     use Scenic.Scene
     import Scenic.Primitives
@@ -1185,6 +1202,32 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
 
     # Stroke sample somewhere in the translated curve region.
     assert any_non_background?(frame, width, 20..40, 20..40)
+  end
+
+  test "scissor clips drawing to expected bounds" do
+    assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
+
+    vp = ViewPortHelper.start(size: {64, 64}, scene: ScissorScene)
+    renderer = ViewPortHelper.renderer(vp)
+
+    on_exit(fn ->
+      if Process.alive?(vp.pid) do
+        _ = ViewPort.stop(vp)
+      end
+
+      _ = Native.stop(renderer)
+    end)
+
+    {width, _height, frame} =
+      wait_for_frame!(renderer, 40, fn {w, _h, data} ->
+        pixel_at(data, w, 15, 15) == {255, 0, 0}
+      end)
+
+    # Fill inside scissor bounds.
+    assert pixel_at(frame, width, 15, 15) == {255, 0, 0}
+    # Outside scissor but inside original rect stays background.
+    assert pixel_at(frame, width, 35, 15) == {0, 0, 0}
+    assert pixel_at(frame, width, 15, 35) == {0, 0, 0}
   end
 
   defp wait_for_frame!(renderer, attempts_remaining, predicate) do

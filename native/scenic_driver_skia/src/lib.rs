@@ -501,6 +501,22 @@ fn parse_script(script: &[u8]) -> Result<Vec<ScriptOp>, String> {
         let opcode = u16::from_be_bytes([op[0], op[1]]);
         rest = remaining;
         match opcode {
+            0x44 => {
+                if rest.len() < 10 {
+                    return Err("scissor opcode truncated".to_string());
+                }
+                let (_reserved, tail) = rest.split_at(2);
+                let (w_bytes, tail) = tail.split_at(4);
+                let (h_bytes, tail) = tail.split_at(4);
+                let width = f32::from_bits(u32::from_be_bytes([
+                    w_bytes[0], w_bytes[1], w_bytes[2], w_bytes[3],
+                ]));
+                let height = f32::from_bits(u32::from_be_bytes([
+                    h_bytes[0], h_bytes[1], h_bytes[2], h_bytes[3],
+                ]));
+                ops.push(ScriptOp::Scissor { width, height });
+                rest = tail;
+            }
             0x20 => {
                 if rest.len() < 2 {
                     return Err("begin_path opcode truncated".to_string());
@@ -1611,6 +1627,9 @@ mod tests {
         script.extend_from_slice(&[0x00, 0x21, 0x00, 0x00]);
         script.extend_from_slice(&[0x00, 0x22, 0x00, 0x00]);
         script.extend_from_slice(&[0x00, 0x23, 0x00, 0x00]);
+        script.extend_from_slice(&[0x00, 0x44, 0x00, 0x00]);
+        push_f32(&mut script, 30.0);
+        push_f32(&mut script, 40.0);
 
         let ops = parse_script(&script).expect("parse_script failed");
         assert_eq!(
@@ -1642,7 +1661,11 @@ mod tests {
                 },
                 ScriptOp::ClosePath,
                 ScriptOp::FillPath,
-                ScriptOp::StrokePath
+                ScriptOp::StrokePath,
+                ScriptOp::Scissor {
+                    width: 30.0,
+                    height: 40.0
+                }
             ]
         );
     }

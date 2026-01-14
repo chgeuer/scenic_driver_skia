@@ -12,7 +12,7 @@ Completed:
 - Raster backend validated with raw RGB frame capture; Wayland/DRM share the same render state.
 - Assets module with local fonts + aliases.
 - Script ingestion tests in Rust.
-- Added script ops for `draw_ellipse`, `draw_arc`, `draw_sector`, `draw_rrectv`, and path primitives (begin/move/line/arc_to/bezier/quadratic/close + fill/stroke).
+- Added script ops for `draw_ellipse`, `draw_arc`, `draw_sector`, `draw_rrectv`, and path primitives (begin/move/line/arc_to/bezier/quadratic/close + fill/stroke + scissor).
 
 ## Done
 1. **Input capability plumbing**
