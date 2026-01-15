@@ -7,6 +7,7 @@ defmodule ScenicDriverSkia.DemoWayland do
     def init(scene, _args, _opts) do
       scene = Scenic.Scene.push_script(scene, build_rrectv_script(), "rrectv_demo")
       scene = Scenic.Scene.push_script(scene, build_path_shape_script(), "path_shape_demo")
+      scene = Scenic.Scene.push_script(scene, build_clip_path_script(), "clip_path_demo")
       scene = Scenic.Scene.assign(scene, join_miter_limit: 1)
       scene = schedule_join_tick(scene)
       graph = build_graph(scene.assigns.join_miter_limit)
@@ -104,6 +105,8 @@ defmodule ScenicDriverSkia.DemoWayland do
       |> text("arc", fill: :white, translate: {x1, y3 + label_offset})
       |> sector({70, 1.2}, fill: :teal, stroke: {3, :white}, translate: {x2 + 100, y3 + 60})
       |> text("sector", fill: :white, translate: {x2, y3 + label_offset})
+      |> script("clip_path_demo", translate: {x2, y3 + 140})
+      |> text("clip path", fill: :white, translate: {x2, y3 + 230})
       |> path(path_commands,
         fill: :maroon,
         stroke: {3, :white},
@@ -202,6 +205,21 @@ defmodule ScenicDriverSkia.DemoWayland do
       |> Script.finish()
     end
 
+    defp build_clip_path_script do
+      Script.start()
+      |> Script.fill_color(:cyan)
+      |> Script.stroke_color(:white)
+      |> Script.stroke_width(2)
+      |> Script.push_state()
+      |> Script.translate(20, 20)
+      |> Script.begin_path()
+      |> Script.circle(25)
+      |> clip_path(:intersect)
+      |> Script.draw_rectangle(80, 60, :fill_stroke)
+      |> Script.pop_state()
+      |> Script.finish()
+    end
+
     defp build_path_shape_script do
       Script.start()
       |> Script.fill_color(:purple)
@@ -263,6 +281,10 @@ defmodule ScenicDriverSkia.DemoWayland do
       |> Script.stroke_path()
       |> Script.pop_state()
       |> Script.finish()
+    end
+
+    defp clip_path(ops, mode \\ :intersect) do
+      [{:clip_path, mode} | ops]
     end
   end
 

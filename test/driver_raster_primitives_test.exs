@@ -114,6 +114,37 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     end
   end
 
+  defmodule ClipPathScene do
+    use Scenic.Scene
+    import Scenic.Primitives
+    alias Scenic.Script
+
+    def init(scene, _args, _opts) do
+      graph =
+        Scenic.Graph.build()
+        |> script("clip_path_demo")
+
+      script =
+        Script.start()
+        |> Script.fill_color(:white)
+        |> Script.push_state()
+        |> Script.translate(20, 20)
+        |> Script.begin_path()
+        |> Script.circle(10)
+        |> clip_path()
+        |> Script.draw_rectangle(30, 30, :fill)
+        |> Script.pop_state()
+        |> Script.finish()
+
+      scene = Scenic.Scene.push_script(scene, script, "clip_path_demo")
+      {:ok, Scenic.Scene.push_graph(scene, graph)}
+    end
+
+    defp clip_path(ops) do
+      [{:clip_path, :intersect} | ops]
+    end
+  end
+
   defmodule LineScene do
     use Scenic.Scene
     import Scenic.Primitives
@@ -597,6 +628,31 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     assert pixel_at(frame, width, 15, 30) == {255, 255, 255}
     # Fill sample inside the rect.
     assert pixel_at(frame, width, 20, 20) == {255, 0, 0}
+  end
+
+  test "clip_path limits drawing to the path" do
+    assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
+
+    vp = ViewPortHelper.start(size: {64, 64}, scene: ClipPathScene)
+    renderer = ViewPortHelper.renderer(vp)
+
+    on_exit(fn ->
+      if Process.alive?(vp.pid) do
+        _ = ViewPort.stop(vp)
+      end
+
+      _ = Native.stop(renderer)
+    end)
+
+    {width, _height, frame} =
+      wait_for_frame!(renderer, 40, fn {w, _h, data} ->
+        pixel_at(data, w, 20, 20) == {255, 255, 255}
+      end)
+
+    # Center of the clipped circle should be white.
+    assert pixel_at(frame, width, 20, 20) == {255, 255, 255}
+    # Inside the rectangle but outside the circle should remain background.
+    assert pixel_at(frame, width, 35, 35) == {0, 0, 0}
   end
 
   test "draw_rect stroke only renders expected pixels" do

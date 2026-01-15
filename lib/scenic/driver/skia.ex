@@ -183,10 +183,7 @@ defmodule Scenic.Driver.Skia do
           {:ok, script} ->
             driver = ensure_media(script, driver)
 
-            binary =
-              script
-              |> Script.serialize()
-              |> IO.iodata_to_binary()
+            binary = serialize_script(script)
 
             {[{to_string(id), binary} | acc], driver}
 
@@ -217,6 +214,25 @@ defmodule Scenic.Driver.Skia do
 
   defp normalize_viewport_size({width, height}) do
     {round(width), round(height)}
+  end
+
+  defp serialize_script(script) do
+    script
+    |> Script.serialize(&serialize_op/1)
+    |> IO.iodata_to_binary()
+  end
+
+  defp serialize_op({:clip_path, mode}) do
+    encode_clip_path(mode)
+  end
+
+  defp serialize_op(other), do: other
+
+  defp encode_clip_path(:intersect), do: <<0x0045::16-big, 0x00::16-big>>
+  defp encode_clip_path(:difference), do: <<0x0045::16-big, 0x01::16-big>>
+
+  defp encode_clip_path(mode) do
+    raise ArgumentError, "invalid clip_path mode: #{inspect(mode)}"
   end
 
   @impl Scenic.Driver

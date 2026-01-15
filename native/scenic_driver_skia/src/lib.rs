@@ -21,6 +21,7 @@ use cursor::CursorState;
 use input::{InputEvent, InputQueue, notify_input_ready};
 use renderer::{RenderState, ScriptOp};
 use rustler::{Binary, Env, OwnedBinary, ResourceArc, Term};
+use skia_safe::ClipOp;
 
 enum StopSignal {
     Wayland(winit::event_loop::EventLoopProxy<UserEvent>),
@@ -549,6 +550,20 @@ fn parse_script(script: &[u8]) -> Result<Vec<ScriptOp>, String> {
                     h_bytes[0], h_bytes[1], h_bytes[2], h_bytes[3],
                 ]));
                 ops.push(ScriptOp::Scissor { width, height });
+                rest = tail;
+            }
+            0x45 => {
+                if rest.len() < 2 {
+                    return Err("clip_path opcode truncated".to_string());
+                }
+                let (mode_bytes, tail) = rest.split_at(2);
+                let mode = u16::from_be_bytes([mode_bytes[0], mode_bytes[1]]);
+                let clip_op = match mode {
+                    0x00 => ClipOp::Intersect,
+                    0x01 => ClipOp::Difference,
+                    _ => return Err("clip_path opcode invalid".to_string()),
+                };
+                ops.push(ScriptOp::ClipPath(clip_op));
                 rest = tail;
             }
             0x20 => {
@@ -2110,6 +2125,13 @@ mod tests {
                 }]
             }]
         );
+    }
+
+    #[test]
+    fn parse_clip_path() {
+        let script: [u8; 4] = [0x00, 0x45, 0x00, 0x00];
+        let ops = parse_script(&script).expect("parse_script failed");
+        assert_eq!(ops, vec![ScriptOp::ClipPath(ClipOp::Intersect)]);
     }
 
     #[test]

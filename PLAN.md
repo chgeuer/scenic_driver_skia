@@ -18,6 +18,7 @@ Completed:
 - Added radial gradient fill/stroke paint support.
 - Added static image and stream paint support.
 - Added Script path-shape ops (`triangle`, `quad`, `rect`, `rrect`, `sector`, `circle`, `ellipse`, `arc`) and `draw_sprites` support.
+- Added clip-path support for driver scripts with raster coverage.
 - Documented stream image update flow in `GUIDES.md`.
 - Validated font aliasing details in `ASSETS.md`.
 - Stream asset updates refresh textures and trigger redraws.
@@ -55,8 +56,6 @@ Completed:
 
 ## Next
 1. **Script opcode parity (rendering coverage)**
-   - **Paint features**: image patterns, blend modes, stroke dashes.
-   - **Clipping**: implement clip rect/path and save/restore semantics to match Scenic script behavior.
    - **Raster coverage**: expand per-primitive raster tests for upcoming paint, image, and clipping features.
 2. **Asset pipeline completeness**
    - Verify stream updates on Wayland/DRM in addition to raster.
