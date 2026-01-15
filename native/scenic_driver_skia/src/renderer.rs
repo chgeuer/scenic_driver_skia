@@ -68,6 +68,7 @@ pub enum ScriptOp {
     StrokeCap(PaintCap),
     StrokeJoin(PaintJoin),
     StrokeMiterLimit(f32),
+    ClipPath(ClipOp),
     Scissor {
         width: f32,
         height: f32,
@@ -548,6 +549,16 @@ fn draw_script(
             ScriptOp::StrokeCap(cap) => draw_state.stroke_cap = *cap,
             ScriptOp::StrokeJoin(join) => draw_state.stroke_join = *join,
             ScriptOp::StrokeMiterLimit(limit) => draw_state.stroke_miter_limit = *limit,
+            ScriptOp::ClipPath(clip_op) => {
+                if let Some(path) = draw_state.path.as_ref() {
+                    let matrix = canvas.local_to_device();
+                    let matrix_3x3 = matrix.to_m33();
+                    let path = path.snapshot_and_transform(Some(&matrix_3x3));
+                    canvas.reset_matrix();
+                    canvas.clip_path(&path, *clip_op, true);
+                    canvas.set_matrix(&matrix);
+                }
+            }
             ScriptOp::Scissor { width, height } => {
                 let rect = Rect::from_xywh(0.0, 0.0, *width, *height);
                 canvas.clip_rect(rect, ClipOp::Intersect, true);
