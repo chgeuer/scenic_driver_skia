@@ -293,7 +293,7 @@ defmodule ScenicDriverSkia.DemoWayland do
       |> Script.finish()
     end
 
-    defp clip_path(ops, mode \\ :intersect) do
+    defp clip_path(ops, mode) do
       [{:clip_path, mode} | ops]
     end
   end
