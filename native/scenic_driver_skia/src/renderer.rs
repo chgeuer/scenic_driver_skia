@@ -299,6 +299,7 @@ pub struct Renderer {
     gr_context: Option<skia_safe::gpu::DirectContext>,
     source: SurfaceSource,
     text: String,
+    scale_factor: f32,
 }
 
 impl Renderer {
@@ -328,6 +329,7 @@ impl Renderer {
                 stencil_size,
             },
             text,
+            scale_factor: 1.0,
         }
     }
 
@@ -341,11 +343,16 @@ impl Renderer {
             gr_context,
             source: SurfaceSource::Raster,
             text,
+            scale_factor: 1.0,
         }
     }
 
     pub fn set_text(&mut self, text: String) {
         self.text = text;
+    }
+
+    pub fn set_scale_factor(&mut self, scale_factor: f32) {
+        self.scale_factor = scale_factor.max(0.1);
     }
 
     pub fn surface_mut(&mut self) -> &mut Surface {
@@ -355,6 +362,11 @@ impl Renderer {
     pub fn redraw(&mut self, render_state: &RenderState) {
         let canvas = self.surface.canvas();
         canvas.clear(render_state.clear_color);
+
+        canvas.save();
+        if (self.scale_factor - 1.0).abs() > f32::EPSILON {
+            canvas.scale((self.scale_factor, self.scale_factor));
+        }
 
         if let Some(root_id) = render_state.root_id.clone() {
             let mut draw_state = DrawState::default();
@@ -376,6 +388,8 @@ impl Renderer {
                 canvas.draw_str(&self.text, (40, 120), font, &paint);
             }
         }
+
+        canvas.restore();
 
         if let Some(gr) = self.gr_context.as_mut() {
             gr.flush_and_submit();

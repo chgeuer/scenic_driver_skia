@@ -20,7 +20,7 @@ use raw_window_handle::HasWindowHandle;
 use skia_safe::gpu::gl::FramebufferInfo;
 use winit::{
     application::ApplicationHandler,
-    dpi::LogicalSize,
+    dpi::{LogicalPosition, LogicalSize},
     event::{ElementState, MouseScrollDelta, WindowEvent},
     event_loop::{EventLoop, EventLoopProxy},
     keyboard::{Key, KeyLocation, ModifiersState, NamedKey},
@@ -64,13 +64,49 @@ struct App {
     input_events: Arc<Mutex<InputQueue>>,
     cursor_pos: (f32, f32),
     window_size: (u32, u32),
+    scale_factor: f64,
     modifiers: ModifiersState,
 }
 
 impl App {
+    fn logical_size(&self, physical: winit::dpi::PhysicalSize<u32>) -> (u32, u32) {
+        let logical: LogicalSize<f64> = physical.to_logical(self.scale_factor);
+        (logical.width.round() as u32, logical.height.round() as u32)
+    }
+
+    fn handle_resize(&mut self, physical_size: winit::dpi::PhysicalSize<u32>) {
+        if !self.running {
+            return;
+        }
+
+        let (w, h): (u32, u32) = physical_size.into();
+        if (w, h) != self.window_size {
+            self.window_size = (w, h);
+            let mask = self.input_mask.load(Ordering::Relaxed);
+            if mask & INPUT_MASK_VIEWPORT != 0 {
+                let (logical_w, logical_h) = self.logical_size(physical_size);
+                self.push_input(InputEvent::ViewportReshape {
+                    width: logical_w,
+                    height: logical_h,
+                });
+            }
+        }
+        if let (Some(env), Some(renderer)) = (self.env.as_mut(), self.renderer.as_mut()) {
+            env.gl_surface.resize(
+                &env.gl_context,
+                NonZeroU32::new(w.max(1)).unwrap(),
+                NonZeroU32::new(h.max(1)).unwrap(),
+            );
+
+            renderer.resize((w.max(1), h.max(1)));
+            env.window.request_redraw();
+        }
+    }
+
     fn redraw(&mut self) {
         if let (Some(env), Some(renderer)) = (self.env.as_mut(), self.renderer.as_mut()) {
             if let Ok(render_state) = self.render_state.lock() {
+                renderer.set_scale_factor(self.scale_factor as f32);
                 renderer.redraw(&render_state);
             }
             env.gl_surface
@@ -91,6 +127,9 @@ impl App {
                         self.env = Some(env);
                         self.renderer = Some(renderer);
                         self.window_size = (size.width, size.height);
+                        if let Some(env) = self.env.as_ref() {
+                            self.scale_factor = env.window.scale_factor();
+                        }
                     }
                     Err(err) => {
                         eprintln!("Failed to initialize renderer: {err}");
@@ -437,8 +476,9 @@ impl ApplicationHandler<UserEvent> for App {
 
             WindowEvent::CursorMoved { position, .. } => {
                 let mask = self.input_mask.load(Ordering::Relaxed);
-                let x = position.x as f32;
-                let y = position.y as f32;
+                let logical: LogicalPosition<f64> = position.to_logical(self.scale_factor);
+                let x = logical.x as f32;
+                let y = logical.y as f32;
                 self.cursor_pos = (x, y);
                 if mask & INPUT_MASK_CURSOR_POS != 0 {
                     self.push_input(InputEvent::CursorPos { x, y });
@@ -494,7 +534,10 @@ impl ApplicationHandler<UserEvent> for App {
                 if mask & INPUT_MASK_CURSOR_SCROLL != 0 {
                     let (dx, dy) = match delta {
                         MouseScrollDelta::LineDelta(x, y) => (x, y),
-                        MouseScrollDelta::PixelDelta(pos) => (pos.x as f32, pos.y as f32),
+                        MouseScrollDelta::PixelDelta(pos) => {
+                            let logical: LogicalPosition<f64> = pos.to_logical(self.scale_factor);
+                            (logical.x as f32, logical.y as f32)
+                        }
                     };
                     let (x, y) = self.cursor_pos;
                     self.push_input(InputEvent::CursorScroll { dx, dy, x, y });
@@ -504,29 +547,16 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::CloseRequested => self.set_running(_event_loop, false),
 
             WindowEvent::Resized(physical_size) => {
-                if !self.running {
-                    return;
-                }
-                let (w, h): (u32, u32) = physical_size.into();
-                if (w, h) != self.window_size {
-                    self.window_size = (w, h);
-                    let mask = self.input_mask.load(Ordering::Relaxed);
-                    if mask & INPUT_MASK_VIEWPORT != 0 {
-                        self.push_input(InputEvent::ViewportReshape {
-                            width: w,
-                            height: h,
-                        });
-                    }
-                }
-                if let (Some(env), Some(renderer)) = (self.env.as_mut(), self.renderer.as_mut()) {
-                    env.gl_surface.resize(
-                        &env.gl_context,
-                        NonZeroU32::new(w.max(1)).unwrap(),
-                        NonZeroU32::new(h.max(1)).unwrap(),
-                    );
+                self.handle_resize(physical_size);
+            }
 
-                    renderer.resize((w.max(1), h.max(1)));
-                    env.window.request_redraw();
+            WindowEvent::ScaleFactorChanged {
+                scale_factor,
+                inner_size_writer: _,
+            } => {
+                self.scale_factor = scale_factor;
+                if let Some(env) = self.env.as_ref() {
+                    self.handle_resize(env.window.inner_size());
                 }
             }
 
@@ -585,6 +615,7 @@ pub fn run(
             }
         };
     let size = env.window.inner_size();
+    let scale_factor = env.window.scale_factor();
 
     let mut app = App {
         env: Some(env),
@@ -597,6 +628,7 @@ pub fn run(
         input_events,
         cursor_pos: (0.0, 0.0),
         window_size: (size.width, size.height),
+        scale_factor,
         modifiers: ModifiersState::empty(),
     };
     app.redraw();
