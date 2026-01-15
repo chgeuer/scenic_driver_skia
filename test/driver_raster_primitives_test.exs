@@ -531,6 +531,22 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     end
   end
 
+  defmodule StrokeImageScene do
+    use Scenic.Scene
+    import Scenic.Primitives
+
+    def init(scene, _args, _opts) do
+      graph =
+        Scenic.Graph.build()
+        |> line({{0, 0}, {20, 0}},
+          stroke: {6, {:image, :test_red}},
+          translate: {10, 20}
+        )
+
+      {:ok, Scenic.Scene.push_graph(scene, graph)}
+    end
+  end
+
   defmodule StreamFillScene do
     use Scenic.Scene
     import Scenic.Primitives
@@ -541,6 +557,22 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
         |> rect({20, 20},
           fill: {:stream, stream_id},
           translate: {10, 10}
+        )
+
+      {:ok, Scenic.Scene.push_graph(scene, graph)}
+    end
+  end
+
+  defmodule StreamStrokeScene do
+    use Scenic.Scene
+    import Scenic.Primitives
+
+    def init(scene, stream_id, _opts) do
+      graph =
+        Scenic.Graph.build()
+        |> line({{0, 0}, {20, 0}},
+          stroke: {6, {:stream, stream_id}},
+          translate: {10, 20}
         )
 
       {:ok, Scenic.Scene.push_graph(scene, graph)}
@@ -646,7 +678,8 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
 
     {width, _height, frame} =
       wait_for_frame!(renderer, 40, fn {w, _h, data} ->
-        pixel_at(data, w, 20, 20) == {255, 255, 255}
+        pixel_at(data, w, 20, 20) == {255, 255, 255} and
+          pixel_at(data, w, 35, 35) == {0, 0, 0}
       end)
 
     # Center of the clipped circle should be white.
@@ -1538,6 +1571,29 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
     assert red_pixel?(pixel_at(frame, width, 15, 15))
   end
 
+  test "image stroke renders image color" do
+    assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
+
+    vp = ViewPortHelper.start(size: {64, 64}, scene: StrokeImageScene)
+    renderer = ViewPortHelper.renderer(vp)
+
+    on_exit(fn ->
+      if Process.alive?(vp.pid) do
+        _ = ViewPort.stop(vp)
+      end
+
+      _ = Native.stop(renderer)
+    end)
+
+    {width, _height, frame} =
+      wait_for_frame!(renderer, 40, fn {w, _h, data} ->
+        red_pixel?(pixel_at(data, w, 15, 20))
+      end)
+
+    # Stroke image should render the red pixel along the line.
+    assert red_pixel?(pixel_at(frame, width, 15, 20))
+  end
+
   test "stream fill renders provided bitmap" do
     assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
 
@@ -1573,6 +1629,43 @@ defmodule Scenic.Driver.Skia.RasterPrimitivesTest do
 
     # Stream fill should render within the rect bounds.
     assert any_non_background?(frame, width, 12..28, 12..28)
+  end
+
+  test "stream stroke renders provided bitmap" do
+    assert {:ok, _} = Application.ensure_all_started(:scenic_driver_skia)
+
+    :ok = ensure_stream_started()
+    stream_id = "raster_stream_stroke_#{System.unique_integer([:positive])}"
+    bitmap = Scenic.Assets.Stream.Bitmap.build(:rgb, 2, 2, clear: :green, commit: true)
+    :ok = Scenic.Assets.Stream.put(stream_id, bitmap)
+    assert {:ok, _} = Scenic.Assets.Stream.fetch(stream_id)
+
+    vp = ViewPortHelper.start(size: {64, 64}, scene: {StreamStrokeScene, stream_id})
+    renderer = ViewPortHelper.renderer(vp)
+    {Scenic.Assets.Stream.Bitmap, {w, h, format}, bin} = bitmap
+
+    :ok =
+      normalize_nif_result(
+        Native.put_stream_texture(renderer, stream_id, Atom.to_string(format), w, h, bin)
+      )
+
+    on_exit(fn ->
+      Scenic.Assets.Stream.delete(stream_id)
+
+      if Process.alive?(vp.pid) do
+        _ = ViewPort.stop(vp)
+      end
+
+      _ = Native.stop(renderer)
+    end)
+
+    {width, _height, frame} =
+      wait_for_frame!(renderer, 40, fn {w, _h, data} ->
+        any_non_background?(data, w, 12..28, 18..22)
+      end)
+
+    # Stream stroke should render along the line.
+    assert any_non_background?(frame, width, 12..28, 18..22)
   end
 
   test "cap square extends farther than butt" do
