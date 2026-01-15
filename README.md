@@ -58,6 +58,10 @@ The driver can target different rendering backends:
 - `mix run scripts/demo_wayland.exs` renders each supported primitive in a Wayland window.
 - `mix run scripts/demo_drm.exs` renders and shows input events on DRM.
 
+## What is missing
+- running example scenic app on wayland seems to have problems with backspace on text
+- still needs to be tested on nerves
+
 ## Prerequisites
 
 - Elixir 1.15+ and a Rust toolchain (for Rustler).
